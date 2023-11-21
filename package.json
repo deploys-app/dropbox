@@ -6,10 +6,12 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "start": "wrangler dev",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint --ignore-path .gitignore ."
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231025.0",
+    "eslint": "^8.54.0",
     "vitest": "^0.34.6",
     "wrangler": "^3.16.0"
   }

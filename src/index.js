@@ -12,7 +12,7 @@ export default {
 	 * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
 	 * @returns {Promise<import('@cloudflare/workers-types').Response>}
 	 **/
-	async fetch(request, env, ctx) {
+	async fetch (request, env, ctx) {
 		if (request.method !== 'POST') {
 			return new Response('Deploys.app Dropbox Service')
 		}
