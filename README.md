@@ -10,6 +10,13 @@ $ bun install
 $ bun start
 ```
 
+## Testing
+
+```shell
+$ bun run lint
+$ bun run test
+```
+
 ## Deployment
 
 ```shell
