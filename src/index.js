@@ -1,6 +1,7 @@
 /**
  * @typedef Env
  * @property {import('@cloudflare/workers-types').R2Bucket} BUCKET
+ * @property {import('@cloudflare/workers-types').AnalyticsEngineDataset} WAE
  */
 
 const baseUrl = 'https://dropbox.deploys.app/'
@@ -21,7 +22,8 @@ export default {
 		if (url.pathname !== '/') {
 			return new Response('error: not found', { status: 404 })
 		}
-		if (!request.body || request.headers.get('content-length') === '0') {
+		const bodySize = Number(request.headers.get('content-length'))
+		if (!request.body || bodySize === 0) {
 			return new Response('error: body empty', { status: 400 })
 		}
 
@@ -38,6 +40,18 @@ export default {
 			console.error(e)
 			return new Response('error: failed to upload', { status: 500 })
 		}
+
+		// env.WAE undefined in test env
+		env.WAE?.writeDataPoint({
+			blobs: [
+				'alpha', // TODO: project id
+				request.cf.colo,
+				request.cf.country
+			],
+			doubles: [bodySize],
+			indexes: ['alpha']
+		})
+
 		return new Response(JSON.stringify({
 			downloadUrl: `${baseUrl}${fn}`
 		}), {

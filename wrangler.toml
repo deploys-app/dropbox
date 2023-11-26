@@ -7,3 +7,7 @@ compatibility_date = "2023-09-22"
 [[r2_buckets]]
 binding = "BUCKET"
 bucket_name = "deploys-dropbox"
+
+[[analytics_engine_datasets]]
+binding = "WAE"
+dataset = "deploys_dropbox"
