@@ -36,7 +36,12 @@ describe('dropbox', () => {
 		})
 		expect(resp.ok).toBeFalsy()
 		expect(resp.status).toEqual(400)
-		expect(await resp.text()).toEqual('error: body empty')
+		expect(await resp.json()).toEqual({
+			ok: false,
+			error: {
+				message: 'body empty'
+			}
+		})
 	})
 
 	test('upload file', async () => {
@@ -51,6 +56,6 @@ describe('dropbox', () => {
 		expect(resp.ok).toBeTruthy()
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
-		expect(res.downloadUrl).toBeTruthy()
+		expect(res.result.downloadUrl).toBeTruthy()
 	})
 })

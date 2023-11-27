@@ -20,11 +20,11 @@ export default {
 
 		const url = new URL(request.url)
 		if (url.pathname !== '/') {
-			return new Response('error: not found', { status: 404 })
+			return failResponse('not found', 404)
 		}
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
-			return new Response('error: body empty', { status: 400 })
+			return failResponse('body empty', 400)
 		}
 
 		// TODO: check auth
@@ -38,7 +38,7 @@ export default {
 			})
 		} catch (e) {
 			console.error(e)
-			return new Response('error: failed to upload', { status: 500 })
+			return failResponse('failed to upload', 500)
 		}
 
 		// env.WAE undefined in test env
@@ -53,7 +53,11 @@ export default {
 		})
 
 		return new Response(JSON.stringify({
-			downloadUrl: `${baseUrl}${fn}`
+			downloadUrl: `${baseUrl}${fn}`, // TODO: deprecated
+			ok: true,
+			result: {
+				downloadUrl: `${baseUrl}${fn}`
+			}
 		}), {
 			headers: {
 				'content-type': 'application/json'
@@ -70,4 +74,24 @@ function generateFilename () {
 
 function toRawURLEncoding (s) {
 	return s.replace(/=*$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+}
+
+/**
+ * failResponse returns a JSON response with an error message
+ * @param {string} msg
+ * @param {number} status
+ * @returns {Response}
+ */
+function failResponse (msg, status) {
+	return new Response(JSON.stringify({
+		ok: false,
+		error: {
+			message: msg
+		}
+	}), {
+		status,
+		headers: {
+			'content-type': 'application/json'
+		}
+	})
 }
