@@ -1,4 +1,5 @@
 import dayjs from 'dayjs'
+import { format as formatDate } from './date'
 
 /**
  * @typedef Env
@@ -20,14 +21,13 @@ export default {
 			return new Response('Deploys.app Dropbox Service')
 		}
 
-		const url = new URL(request.url)
-		if (url.pathname !== '/') {
-			return failResponse('not found', 404)
-		}
-		let ttlDays = Number(url.searchParams.get('d'))
+		// Workers do not support matching route with query params,
+		// so we use header to pass params instead
+		let ttlDays = Number(request.headers.get('param-ttl'))
 		if (!ttlDays || ttlDays < 1 || ttlDays > 7) {
 			ttlDays = 1
 		}
+
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
 			return failResponse('body empty', 400)
@@ -65,7 +65,7 @@ export default {
 			ok: true,
 			result: {
 				downloadUrl: `${baseUrl}${fn}`,
-				expiresAt: expiresAt.format()
+				expiresAt: formatDate(expiresAt),
 			}
 		}), {
 			headers: {
