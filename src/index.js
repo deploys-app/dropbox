@@ -65,7 +65,7 @@ export default {
 			ok: true,
 			result: {
 				downloadUrl: `${baseUrl}${fn}`,
-				expiresAt: formatDate(expiresAt),
+				expiresAt: formatDate(expiresAt)
 			}
 		}), {
 			headers: {
