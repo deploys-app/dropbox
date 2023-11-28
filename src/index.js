@@ -1,3 +1,6 @@
+import dayjs from 'dayjs'
+import { format as formatDate } from './date'
+
 /**
  * @typedef Env
  * @property {import('@cloudflare/workers-types').R2Bucket} BUCKET
@@ -18,10 +21,13 @@ export default {
 			return new Response('Deploys.app Dropbox Service')
 		}
 
-		const url = new URL(request.url)
-		if (url.pathname !== '/') {
-			return failResponse('not found', 404)
+		// Workers do not support matching route with query params,
+		// so we use header to pass params instead
+		let ttlDays = Number(request.headers.get('param-ttl'))
+		if (!ttlDays || ttlDays < 1 || ttlDays > 7) {
+			ttlDays = 1
 		}
+
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
 			return failResponse('body empty', 400)
@@ -29,7 +35,9 @@ export default {
 
 		// TODO: check auth
 
-		const fn = generateFilename()
+		const expiresAt = dayjs().add(ttlDays, 'day')
+
+		const fn = ttlDays + generateFilename()
 		try {
 			await env.BUCKET.put(fn, request.body, {
 				httpMetadata: {
@@ -56,7 +64,8 @@ export default {
 			downloadUrl: `${baseUrl}${fn}`, // TODO: deprecated
 			ok: true,
 			result: {
-				downloadUrl: `${baseUrl}${fn}`
+				downloadUrl: `${baseUrl}${fn}`,
+				expiresAt: formatDate(expiresAt)
 			}
 		}), {
 			headers: {
