@@ -61,7 +61,6 @@ export default {
 		})
 
 		return new Response(JSON.stringify({
-			downloadUrl: `${baseUrl}${fn}`, // TODO: deprecated
 			ok: true,
 			result: {
 				downloadUrl: `${baseUrl}${fn}`,
