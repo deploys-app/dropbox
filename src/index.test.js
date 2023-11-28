@@ -1,5 +1,6 @@
 import { test, expect, describe, beforeAll, afterAll } from 'vitest'
 import { unstable_dev } from 'wrangler'
+import dayjs from 'dayjs'
 
 describe('dropbox', () => {
 	let worker
@@ -57,5 +58,38 @@ describe('dropbox', () => {
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
 		expect(res.result.downloadUrl).toBeTruthy()
+		expect(res.result.expiresAt).toEqual(dayjs().add(1, 'day').format())
+	})
+
+	test('upload file with ttl', async () => {
+		const body = 'hello world'
+		const resp = await worker.fetch('/?d=4', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result.downloadUrl).toBeTruthy()
+		expect(res.result.expiresAt).toEqual(dayjs().add(4, 'day').format())
+	})
+
+	test('upload file with invalid ttl', async () => {
+		const body = 'hello world'
+		const resp = await worker.fetch('/?d=8', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result.downloadUrl).toBeTruthy()
+		expect(res.result.expiresAt).toEqual(dayjs().add(1, 'day').format())
 	})
 })

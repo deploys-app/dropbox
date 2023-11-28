@@ -1,3 +1,5 @@
+import dayjs from 'dayjs'
+
 /**
  * @typedef Env
  * @property {import('@cloudflare/workers-types').R2Bucket} BUCKET
@@ -22,6 +24,10 @@ export default {
 		if (url.pathname !== '/') {
 			return failResponse('not found', 404)
 		}
+		let ttlDays = Number(url.searchParams.get('d'))
+		if (!ttlDays || ttlDays < 1 || ttlDays > 7) {
+			ttlDays = 1
+		}
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
 			return failResponse('body empty', 400)
@@ -29,7 +35,9 @@ export default {
 
 		// TODO: check auth
 
-		const fn = generateFilename()
+		const expiresAt = dayjs().add(ttlDays, 'day')
+
+		const fn = ttlDays + generateFilename()
 		try {
 			await env.BUCKET.put(fn, request.body, {
 				httpMetadata: {
@@ -56,7 +64,8 @@ export default {
 			downloadUrl: `${baseUrl}${fn}`, // TODO: deprecated
 			ok: true,
 			result: {
-				downloadUrl: `${baseUrl}${fn}`
+				downloadUrl: `${baseUrl}${fn}`,
+				expiresAt: expiresAt.format()
 			}
 		}), {
 			headers: {

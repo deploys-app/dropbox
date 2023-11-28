@@ -11,6 +11,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20231121.0",
+    "dayjs": "^1.11.10",
     "eslint": "^8.54.0",
     "vitest": "^0.34.6",
     "wrangler": "^3.17.1"
