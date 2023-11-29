@@ -54,7 +54,8 @@ export default {
 			blobs: [
 				'alpha', // TODO: project id
 				request.cf.colo,
-				request.cf.country
+				request.cf.country,
+				ttlDays
 			],
 			doubles: [bodySize],
 			indexes: ['alpha']
