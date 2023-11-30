@@ -27,6 +27,7 @@ export default {
 		if (!ttlDays || ttlDays < 1 || ttlDays > 7) {
 			ttlDays = 1
 		}
+		const filename = request.headers.get('param-filename')
 
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
@@ -41,7 +42,8 @@ export default {
 		try {
 			await env.BUCKET.put(fn, request.body, {
 				httpMetadata: {
-					cacheControl: 'public, max-age=86400'
+					cacheControl: 'public, max-age=86400',
+					contentDisposition: filename ? `attachment; filename="${escapeFilename(filename)}"` : undefined
 				}
 			})
 		} catch (e) {
@@ -103,4 +105,9 @@ function failResponse (msg, status) {
 			'content-type': 'application/json'
 		}
 	})
+}
+
+function escapeFilename (s) {
+	s = s || ''
+	return s.replace(/"/g, '')
 }
