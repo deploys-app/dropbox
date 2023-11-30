@@ -87,4 +87,20 @@ describe('dropbox', () => {
 		expect(res.result.downloadUrl).toBeTruthy()
 		expect(res.result.expiresAt).toEqual(formatDate(dayjs().add(1, 'day')))
 	})
+
+	test('upload file with filename', async () => {
+		const body = 'hello world'
+		const resp = await worker.fetch('/', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length,
+				'param-filename': 'hello.txt'
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result.downloadUrl).toBeTruthy()
+	})
 })
