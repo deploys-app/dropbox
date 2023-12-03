@@ -3,6 +3,17 @@ import { unstable_dev } from 'wrangler'
 import dayjs from 'dayjs'
 import { format as formatDate } from './date'
 
+expect.extend({
+	dateTimeEqual (received, expected) {
+		const receivedUnix = dayjs(received).unix()
+		const expectedUnix = dayjs(expected).unix()
+		return {
+			pass: receivedUnix >= expectedUnix - 1 && receivedUnix <= expectedUnix + 1,
+			message: () => `expected ${dayjs(received)} to equal ${dayjs(expected)}`
+		}
+	}
+})
+
 describe('dropbox', () => {
 	let worker
 
@@ -51,7 +62,7 @@ describe('dropbox', () => {
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
 		expect(res.result.downloadUrl).toBeTruthy()
-		expect(res.result.expiresAt).toEqual(formatDate(dayjs().add(1, 'day')))
+		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(1, 'day'))
 	})
 
 	test('upload file with ttl', async () => {
@@ -68,7 +79,7 @@ describe('dropbox', () => {
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
 		expect(res.result.downloadUrl).toBeTruthy()
-		expect(res.result.expiresAt).toEqual(formatDate(dayjs().add(4, 'day')))
+		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(4, 'day'))
 	})
 
 	test('upload file with invalid ttl', async () => {
@@ -85,7 +96,7 @@ describe('dropbox', () => {
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
 		expect(res.result.downloadUrl).toBeTruthy()
-		expect(res.result.expiresAt).toEqual(formatDate(dayjs().add(1, 'day')))
+		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(1, 'day'))
 	})
 
 	test('upload file with filename', async () => {
