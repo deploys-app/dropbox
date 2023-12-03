@@ -1,7 +1,6 @@
 import { test, expect, describe, beforeAll, afterAll } from 'vitest'
 import { unstable_dev } from 'wrangler'
 import dayjs from 'dayjs'
-import { format as formatDate } from './date'
 
 expect.extend({
 	dateTimeEqual (received, expected) {
