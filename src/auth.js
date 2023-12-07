@@ -40,11 +40,12 @@ export async function authorized (request) {
 	const resp = await fetch('https://api.deploys.app/me.authorized', {
 		method: 'POST',
 		headers: {
-			authorization: auth
+			authorization: auth,
+			'content-type': 'application/json'
 		},
 		body: JSON.stringify({
-			project,
-			projectId,
+			project: project ?? undefined,
+			projectId: projectId ?? undefined,
 			permissions: [permission]
 		})
 	})
