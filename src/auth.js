@@ -59,5 +59,15 @@ export async function authorized (request) {
 	if (!res.result.authorized) {
 		return { authorized: false }
 	}
-	return res.result
+	if (!res.result.project.billingAccount.active) {
+		return { authorized: false }
+	}
+
+	return {
+		authorized: true,
+		project: {
+			id: res.result.project.id,
+			project: res.result.project.project
+		}
+	}
 }

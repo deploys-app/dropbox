@@ -26,7 +26,10 @@ describe('auth', () => {
 						authorized: true,
 						project: {
 							id: '1234567890',
-							project: 'test-project'
+							project: 'test-project',
+							billingAccount: {
+								active: true
+							}
 						}
 					}
 				}
@@ -68,7 +71,10 @@ describe('auth', () => {
 						authorized: true,
 						project: {
 							id: '1234567890',
-							project: 'test-project'
+							project: 'test-project',
+							billingAccount: {
+								active: true
+							}
 						}
 					}
 				}
