@@ -38,6 +38,10 @@ Endpoint: https://dropbox.deploys.app/
 
 `POST /`
 
+#### Permissions Required
+
+- `dropbox.upload`
+
 #### Headers
 
 | name           | type     | data type | description               |
