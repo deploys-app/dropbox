@@ -38,8 +38,8 @@ describe('dropbox', () => {
 		const resp = await worker.fetch('/', {
 			method: 'POST'
 		})
-		expect(resp.ok).toBeFalsy()
-		expect(resp.status).toEqual(400)
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
 		expect(await resp.json()).toEqual({
 			ok: false,
 			error: {

@@ -1,5 +1,6 @@
 import dayjs from 'dayjs'
 import { format as formatDate } from './date'
+import { authorized } from './auth'
 
 /**
  * @typedef Env
@@ -21,6 +22,19 @@ export default {
 			return new Response('Deploys.app Dropbox Service')
 		}
 
+		const auth = await authorized(request)
+		if (!auth.authorized) {
+			// TODO: reject request after alpha
+			auth.authorized = true
+			auth.project = {
+				id: 'alpha',
+				project: 'alpha'
+			}
+		}
+		if (!auth.authorized) {
+			return failResponse('api: unauthorized')
+		}
+
 		// Workers do not support matching route with query params,
 		// so we use header to pass params instead
 		let ttlDays = Number(request.headers.get('param-ttl'))
@@ -31,10 +45,8 @@ export default {
 
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
-			return failResponse('body empty', 400)
+			return failResponse('body empty')
 		}
-
-		// TODO: check auth
 
 		const expiresAt = dayjs().add(ttlDays, 'day')
 
@@ -54,13 +66,13 @@ export default {
 		// env.WAE undefined in test env
 		env.WAE?.writeDataPoint({
 			blobs: [
-				'alpha', // TODO: project id
+				auth.project.id,
 				request.cf.colo,
 				request.cf.country,
 				ttlDays
 			],
 			doubles: [bodySize],
-			indexes: ['alpha']
+			indexes: [auth.project.id]
 		})
 
 		return new Response(JSON.stringify({
@@ -93,7 +105,7 @@ function toRawURLEncoding (s) {
  * @param {number} status
  * @returns {Response}
  */
-function failResponse (msg, status) {
+function failResponse (msg, status = 200) {
 	return new Response(JSON.stringify({
 		ok: false,
 		error: {
