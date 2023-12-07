@@ -24,14 +24,6 @@ export default {
 
 		const auth = await authorized(request)
 		if (!auth.authorized) {
-			// TODO: reject request after alpha
-			auth.authorized = true
-			auth.project = {
-				id: 'alpha',
-				project: 'alpha'
-			}
-		}
-		if (!auth.authorized) {
 			return failResponse('api: unauthorized')
 		}
 

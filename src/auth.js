@@ -21,7 +21,14 @@ const permission = 'dropbox.upload'
 export async function authorized (request) {
 	const auth = request.headers.get('authorization')
 	if (!auth) {
-		return { authorized: false }
+		// TODO: remove after alpha
+		return {
+			authorized: true,
+			project: {
+				id: 'alpha',
+				project: 'alpha'
+			}
+		}
 	}
 
 	const project = request.headers.get('param-project')
