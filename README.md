@@ -44,12 +44,12 @@ Endpoint: https://dropbox.deploys.app/
 
 #### Headers
 
-| name           | type     | data type | description               |
-|----------------|----------|-----------|---------------------------|
-| Authorization  | required | string    | Authorization token       |
-| Param-Ttl      | optional | string    | 1-7, default 1            |
-| Param-Project  | required | string    | Project name              |
-| Param-Filename | optional | string    | Filename to when download |
+| Name           | Type     | Data Type | Description                     |
+|----------------|----------|-----------|---------------------------------|
+| Authorization  | required | string    | Authorization token             |
+| Param-Ttl      | optional | number    | 1-7, default 1                  |
+| Param-Project  | required | string    | Project name                    |
+| Param-Filename | optional | string    | Filename in Content-Disposition |
 
 #### Body
 
