@@ -33,7 +33,7 @@ export async function authorized (request) {
 
 	const project = request.headers.get('param-project')
 	const projectId = request.headers.get('param-project-id')
-	if (!project || !projectId) {
+	if (!project && !projectId) {
 		return { authorized: false }
 	}
 
