@@ -1,6 +1,8 @@
-import { test, expect, describe, beforeAll, afterAll } from 'vitest'
+import { test, expect, describe, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { unstable_dev } from 'wrangler'
 import dayjs from 'dayjs'
+
+global.fetch = vi.fn()
 
 expect.extend({
 	dateTimeEqual (received, expected) {
@@ -26,6 +28,10 @@ describe('dropbox', () => {
 
 	afterAll(async () => {
 		await worker.stop()
+	})
+
+	afterEach(() => {
+		fetch.mockReset()
 	})
 
 	test('get index', async () => {
@@ -112,5 +118,40 @@ describe('dropbox', () => {
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
 		expect(res.result.downloadUrl).toBeTruthy()
+	})
+
+	test('invalid auth', async () => {
+		fetch.mockResolvedValue({
+			ok: true,
+			json: async () => {
+				return {
+					ok: true,
+					result: {
+						authorized: false,
+						project: {
+							id: '',
+							project: ''
+						}
+					}
+				}
+			}
+		})
+
+		const body = 'hello world'
+		const resp = await worker.fetch('/', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length,
+				'param-filename': 'hello.txt',
+				'authorization': 'bearer invalid',
+				'param-project': 'invalid'
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result).toBeUndefined()
+		expect(res.error.message).toEqual('api: unauthorized')
 	})
 })
