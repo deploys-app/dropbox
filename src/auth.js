@@ -38,6 +38,7 @@ export async function authorized (request) {
 	}
 
 	const resp = await fetch('https://api.deploys.app/me.authorized', {
+		method: 'POST',
 		headers: {
 			authorization: auth
 		},
