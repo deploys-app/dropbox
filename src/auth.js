@@ -56,5 +56,8 @@ export async function authorized (request) {
 	if (!res.ok) {
 		return { authorized: false }
 	}
+	if (!res.result.authorized) {
+		return { authorized: false }
+	}
 	return res.result
 }
