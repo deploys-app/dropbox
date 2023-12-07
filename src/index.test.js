@@ -144,7 +144,7 @@ describe('dropbox', () => {
 			headers: {
 				'content-length': body.length,
 				'param-filename': 'hello.txt',
-				'authorization': 'bearer invalid',
+				authorization: 'bearer invalid',
 				'param-project': 'invalid'
 			}
 		})
