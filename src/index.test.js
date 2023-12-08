@@ -1,6 +1,7 @@
 import { test, expect, describe, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { unstable_dev } from 'wrangler'
 import dayjs from 'dayjs'
+import { createMockAuthResponse } from './auth.test'
 
 global.fetch = vi.fn()
 
@@ -121,21 +122,16 @@ describe('dropbox', () => {
 	})
 
 	test('invalid auth', async () => {
-		fetch.mockResolvedValue({
+		fetch.mockResolvedValue(createMockAuthResponse(true, {
 			ok: true,
-			json: async () => {
-				return {
-					ok: true,
-					result: {
-						authorized: false,
-						project: {
-							id: '',
-							project: ''
-						}
-					}
+			result: {
+				authorized: false,
+				project: {
+					id: '',
+					project: ''
 				}
 			}
-		})
+		}))
 
 		const body = 'hello world'
 		const resp = await worker.fetch('/', {

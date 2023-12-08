@@ -2,6 +2,12 @@ import { test, expect, describe, afterEach, vi } from 'vitest'
 import { authorized } from './auth'
 
 global.fetch = vi.fn()
+global.caches = {
+	default: {
+		match: async () => {},
+		put: async () => {}
+	}
+}
 
 describe('auth', () => {
 	afterEach(() => {
@@ -17,27 +23,22 @@ describe('auth', () => {
 			}
 		})
 
-		fetch.mockResolvedValue({
+		fetch.mockResolvedValue(createMockAuthResponse(true, {
 			ok: true,
-			json: async () => {
-				return {
-					ok: true,
-					result: {
-						authorized: true,
-						project: {
-							id: '1234567890',
-							project: 'test-project',
-							billingAccount: {
-								active: true
-							}
-						}
+			result: {
+				authorized: true,
+				project: {
+					id: '1234567890',
+					project: 'test-project',
+					billingAccount: {
+						active: true
 					}
 				}
 			}
-		})
+		}))
 
 		const r = await authorized(req)
-		expect(fetch).toHaveBeenCalledWith('https://api.deploys.app/me.authorized', {
+		expect(fetch).toHaveBeenCalledWith('https://api.deploys.app/me.authorized', expect.objectContaining({
 			method: 'POST',
 			headers: {
 				authorization: 'bearer token',
@@ -47,7 +48,7 @@ describe('auth', () => {
 				project: 'test-project',
 				permissions: ['dropbox.upload']
 			})
-		})
+		}))
 		expect(r.authorized).toBeTruthy()
 		expect(r.project.id).toEqual('1234567890')
 		expect(r.project.project).toEqual('test-project')
@@ -62,27 +63,22 @@ describe('auth', () => {
 			}
 		})
 
-		fetch.mockResolvedValue({
+		fetch.mockResolvedValue(createMockAuthResponse(true, {
 			ok: true,
-			json: async () => {
-				return {
-					ok: true,
-					result: {
-						authorized: true,
-						project: {
-							id: '1234567890',
-							project: 'test-project',
-							billingAccount: {
-								active: true
-							}
-						}
+			result: {
+				authorized: true,
+				project: {
+					id: '1234567890',
+					project: 'test-project',
+					billingAccount: {
+						active: true
 					}
 				}
 			}
-		})
+		}))
 
 		const r = await authorized(req)
-		expect(fetch).toHaveBeenCalledWith('https://api.deploys.app/me.authorized', {
+		expect(fetch).toHaveBeenCalledWith('https://api.deploys.app/me.authorized', expect.objectContaining({
 			method: 'POST',
 			headers: {
 				authorization: 'bearer token',
@@ -92,7 +88,7 @@ describe('auth', () => {
 				projectId: '1234567890',
 				permissions: ['dropbox.upload']
 			})
-		})
+		}))
 		expect(r.authorized).toBeTruthy()
 		expect(r.project.id).toEqual('1234567890')
 		expect(r.project.project).toEqual('test-project')
@@ -138,9 +134,7 @@ describe('auth', () => {
 			}
 		})
 
-		fetch.mockResolvedValue({
-			ok: false
-		})
+		fetch.mockResolvedValue(createMockAuthResponse(false, null))
 
 		const r = await authorized(req)
 		expect(r.authorized).toBeFalsy()
@@ -155,21 +149,19 @@ describe('auth', () => {
 			}
 		})
 
-		fetch.mockResolvedValue({
+		fetch.mockResolvedValue(createMockAuthResponse(true, {
 			ok: true,
-			json: async () => {
-				return {
-					ok: true,
-					result: {
-						authorized: false,
-						project: {
-							id: '',
-							project: ''
-						}
+			result: {
+				ok: true,
+				result: {
+					authorized: false,
+					project: {
+						id: '',
+						project: ''
 					}
 				}
 			}
-		})
+		}))
 
 		const r = await authorized(req)
 		expect(r.authorized).toBeFalsy()
@@ -185,20 +177,23 @@ describe('auth', () => {
 			}
 		})
 
-		fetch.mockResolvedValue({
-			ok: true,
-			json: async () => {
-				return {
-					ok: false,
-					error: {
-						message: 'api error'
-					}
-				}
+		fetch.mockResolvedValue(createMockAuthResponse(true, {
+			ok: false,
+			error: {
+				message: 'api error'
 			}
-		})
+		}))
 
 		const r = await authorized(req)
 		expect(r.authorized).toBeFalsy()
 		expect(r.project).toBeUndefined()
 	})
 })
+
+export function createMockAuthResponse (ok, data) {
+	return {
+		ok,
+		json: async () => data,
+		clone: () => createMockAuthResponse(ok, data)
+	}
+}

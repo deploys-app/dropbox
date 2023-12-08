@@ -12,6 +12,11 @@ const permission = 'dropbox.upload'
  * @property {Project?} project
  */
 
+/** @type {AuthorizedResult} */
+const unauthorizedResult = Object.freeze({
+	authorized: false
+})
+
 /**
  * Checks if the request is authorized based on the provided headers.
  *
@@ -31,12 +36,13 @@ export async function authorized (request) {
 		}
 	}
 
-	const project = request.headers.get('param-project')
-	const projectId = request.headers.get('param-project-id')
+	const project = request.headers.get('param-project') ?? ''
+	const projectId = request.headers.get('param-project-id') ?? ''
 	if (!project && !projectId) {
-		return { authorized: false }
+		return unauthorizedResult
 	}
 
+	const cacheKey = `deploys--dropbox|auth|${project}|${projectId}|${auth}`
 	const resp = await fetch('https://api.deploys.app/me.authorized', {
 		method: 'POST',
 		headers: {
@@ -44,23 +50,30 @@ export async function authorized (request) {
 			'content-type': 'application/json'
 		},
 		body: JSON.stringify({
-			project: project ?? undefined,
-			projectId: projectId ?? undefined,
+			project: project || undefined,
+			projectId: projectId || undefined,
 			permissions: [permission]
-		})
+		}),
+		cf: {
+			cacheTtlByStatus: {
+				200: 30,
+				'400-599': 0
+			},
+			cacheKey
+		}
 	})
 	if (!resp.ok) {
-		return { authorized: false }
+		return unauthorizedResult
 	}
 	const res = await resp.json()
 	if (!res.ok) {
-		return { authorized: false }
+		return unauthorizedResult
 	}
 	if (!res.result.authorized) {
-		return { authorized: false }
+		return unauthorizedResult
 	}
 	if (!res.result.project.billingAccount.active) {
-		return { authorized: false }
+		return unauthorizedResult
 	}
 
 	return {
