@@ -147,6 +147,7 @@ describe('dropbox', () => {
 		expect(resp.ok).toBeTruthy()
 		expect(resp.status).toEqual(200)
 		const res = await resp.json()
+		expect(res.ok).toBeFalsy()
 		expect(res.result).toBeUndefined()
 		expect(res.error.message).toEqual('api: unauthorized')
 	})

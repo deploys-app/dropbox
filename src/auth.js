@@ -17,13 +17,16 @@ const unauthorizedResult = Object.freeze({
 	authorized: false
 })
 
+const authEndpoint = 'https://api.deploys.app/me.authorized'
+
 /**
  * Checks if the request is authorized based on the provided headers.
  *
  * @param {import('@cloudflare/workers-types').Request} request
+ * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
  * @returns {Promise<AuthorizedResult>}
  */
-export async function authorized (request) {
+export async function authorized (request, ctx) {
 	const auth = request.headers.get('authorization')
 	if (!auth) {
 		// TODO: remove after alpha
@@ -42,29 +45,42 @@ export async function authorized (request) {
 		return unauthorizedResult
 	}
 
+	const cache = caches.default
 	const cacheKey = `deploys--dropbox|auth|${project}|${projectId}|${auth}`
-	const resp = await fetch('https://api.deploys.app/me.authorized', {
-		method: 'POST',
-		headers: {
-			authorization: auth,
-			'content-type': 'application/json'
-		},
-		body: JSON.stringify({
-			project: project || undefined,
-			projectId: projectId || undefined,
-			permissions: [permission]
-		}),
+	const cacheReq = new Request(authEndpoint, {
 		cf: {
-			cacheTtlByStatus: {
-				200: 30,
-				'400-599': 0
-			},
-			cacheKey
+			cacheTtl: 30,
+			cacheKey,
+			cacheTags: ['deploys--dropbox|auth']
 		}
 	})
-	if (!resp.ok) {
-		return unauthorizedResult
+	let resp = await cache.match(cacheReq)
+	if (!resp) {
+		resp = await fetch(authEndpoint, {
+			method: 'POST',
+			headers: {
+				authorization: auth,
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({
+				project: project || undefined,
+				projectId: projectId || undefined,
+				permissions: [permission]
+			}),
+			cf: {
+				cacheTags: []
+			}
+		})
+		if (!resp.ok) {
+			return unauthorizedResult
+		}
+
+		// cache
+		const cacheResp = new Response(resp.clone().body, resp)
+		cacheResp.headers.set('cache-control', 'public, max-age=30')
+		ctx.waitUntil(cache.put(cacheReq, cacheResp))
 	}
+
 	const res = await resp.json()
 	if (!res.ok) {
 		return unauthorizedResult

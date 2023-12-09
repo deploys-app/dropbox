@@ -22,7 +22,7 @@ export default {
 			return new Response('Deploys.app Dropbox Service')
 		}
 
-		const auth = await authorized(request)
+		const auth = await authorized(request, ctx)
 		if (!auth.authorized) {
 			return failResponse('api: unauthorized')
 		}

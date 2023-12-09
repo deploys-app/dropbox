@@ -8,6 +8,9 @@ global.caches = {
 		put: async () => {}
 	}
 }
+const ctx = {
+	waitUntil: () => {}
+}
 
 describe('auth', () => {
 	afterEach(() => {
@@ -37,7 +40,7 @@ describe('auth', () => {
 			}
 		}))
 
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(fetch).toHaveBeenCalledWith('https://api.deploys.app/me.authorized', expect.objectContaining({
 			method: 'POST',
 			headers: {
@@ -77,7 +80,7 @@ describe('auth', () => {
 			}
 		}))
 
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(fetch).toHaveBeenCalledWith('https://api.deploys.app/me.authorized', expect.objectContaining({
 			method: 'POST',
 			headers: {
@@ -98,7 +101,7 @@ describe('auth', () => {
 		const req = new Request('http://localhost/', {
 			method: 'POST'
 		})
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(r.authorized).toBeTruthy()
 		expect(r.project.id).toEqual('alpha')
 		expect(r.project.project).toEqual('alpha')
@@ -108,7 +111,7 @@ describe('auth', () => {
 	// 	const req = new Request('http://localhost/', {
 	// 		method: 'POST'
 	// 	})
-	// 	const r = await authorized(req)
+	// 	const r = await authorized(req, ctx)
 	// 	expect(r.authorized).toBeFalsy()
 	// 	expect(r.project).toBeUndefined()
 	// })
@@ -120,7 +123,7 @@ describe('auth', () => {
 				authorization: 'bearer token'
 			}
 		})
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(r.authorized).toBeFalsy()
 		expect(r.project).toBeUndefined()
 	})
@@ -136,7 +139,7 @@ describe('auth', () => {
 
 		fetch.mockResolvedValue(createMockAuthResponse(false, null))
 
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(r.authorized).toBeFalsy()
 	})
 
@@ -163,7 +166,7 @@ describe('auth', () => {
 			}
 		}))
 
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(r.authorized).toBeFalsy()
 		expect(r.project).toBeUndefined()
 	})
@@ -184,7 +187,7 @@ describe('auth', () => {
 			}
 		}))
 
-		const r = await authorized(req)
+		const r = await authorized(req, ctx)
 		expect(r.authorized).toBeFalsy()
 		expect(r.project).toBeUndefined()
 	})
