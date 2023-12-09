@@ -66,10 +66,7 @@ export async function authorized (request, ctx) {
 				project: project || undefined,
 				projectId: projectId || undefined,
 				permissions: [permission]
-			}),
-			cf: {
-				cacheTags: []
-			}
+			})
 		})
 		if (!resp.ok) {
 			return unauthorizedResult
