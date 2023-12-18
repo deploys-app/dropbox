@@ -26,13 +26,11 @@ export default {
 			return failResponse('api: unauthorized')
 		}
 
-		// Workers do not support matching route with query params,
-		// so we use header to pass params instead
-		let ttlDays = Number(request.headers.get('param-ttl'))
+		let ttlDays = Number(url.searchParams.get('ttl') ?? request.headers.get('param-ttl'))
 		if (!ttlDays || ttlDays < 1 || ttlDays > 7) {
 			ttlDays = 1
 		}
-		const filename = request.headers.get('param-filename') ?? ''
+		const filename = url.searchParams.get('filename') ?? request.headers.get('param-filename') ?? ''
 
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {

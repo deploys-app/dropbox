@@ -2,9 +2,9 @@ name = "deploys-app--dropbox"
 main = "src/index.js"
 compatibility_date = "2023-09-22"
 
-routes = [
-  { pattern = "dropbox.deploys.app/", zone_name = "deploys.app" }
-]
+[route]
+pattern = "dropbox.deploys.app"
+custom_domain = true
 
 [vars]
 

@@ -2,11 +2,6 @@
 
 Temporary file storage
 
-## Notes for alpha version
-
-Currently, the parameters are in the headers.
-This is not ideal, but it's a workaround for the lack of Cloudflare Workers route support.
-
 ## Development
 
 ```shell
@@ -51,6 +46,16 @@ Endpoint: https://dropbox.deploys.app/
 | Param-Project  | required | string    | Project name                    |
 | Param-Filename | optional | string    | Filename in Content-Disposition |
 
+#### Query Parameters
+
+| Name     | Type     | Data Type | Description                     |
+|----------|----------|-----------|---------------------------------|
+| ttl      | optional | number    | 1-7, default 1                  |
+| project  | required | string    | Project name                    |
+| filename | optional | string    | Filename in Content-Disposition |
+
+> ttl, project, filename can be passed as query parameters or headers
+
 #### Body
 
 File data binary
@@ -63,7 +68,7 @@ File data binary
 {
 	"ok": true,
 	"result": {
-		"downloadUrl": "https://dropbox.deploys.app/filename",
+		"downloadUrl": "https://dropbox-files.deploys.app/filename",
 		"expiresAt": "2020-01-01T01:01:01Z"
 	}
 }
@@ -83,6 +88,11 @@ File data binary
 #### Example HTTPie
 
 ```shell
+# using query parameters
+$ http -a user:pass https://dropbox.deploys.app/?ttl=1&project=my-project \
+	< file
+
+# using headers
 $ http -a user:pass https://dropbox.deploys.app/ \
 	param-ttl:1 \
 	param-project:my-project \

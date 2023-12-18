@@ -83,7 +83,23 @@ describe('dropbox', () => {
 		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(1, 'day'))
 	})
 
-	test('upload file with ttl', async () => {
+	test('upload file with ttl query param', async () => {
+		const body = 'hello world'
+		const resp = await worker.fetch('/?ttl=4', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result.downloadUrl).toBeTruthy()
+		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(4, 'day'))
+	})
+
+	test('upload file with ttl header', async () => {
 		const body = 'hello world'
 		const resp = await worker.fetch('/', {
 			method: 'POST',
@@ -100,7 +116,23 @@ describe('dropbox', () => {
 		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(4, 'day'))
 	})
 
-	test('upload file with invalid ttl', async () => {
+	test('upload file with invalid ttl query param', async () => {
+		const body = 'hello world'
+		const resp = await worker.fetch('/?ttl=8', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result.downloadUrl).toBeTruthy()
+		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(1, 'day'))
+	})
+
+	test('upload file with invalid ttl header', async () => {
 		const body = 'hello world'
 		const resp = await worker.fetch('/', {
 			method: 'POST',
@@ -117,7 +149,22 @@ describe('dropbox', () => {
 		expect(res.result.expiresAt).dateTimeEqual(dayjs().add(1, 'day'))
 	})
 
-	test('upload file with filename', async () => {
+	test('upload file with filename query param', async () => {
+		const body = 'hello world'
+		const resp = await worker.fetch('/?filename=hello.txt', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.result.downloadUrl).toBeTruthy()
+	})
+
+	test('upload file with filename header', async () => {
 		const body = 'hello world'
 		const resp = await worker.fetch('/', {
 			method: 'POST',
@@ -133,7 +180,36 @@ describe('dropbox', () => {
 		expect(res.result.downloadUrl).toBeTruthy()
 	})
 
-	test('invalid auth', async () => {
+	test('invalid auth query param', async () => {
+		fetch.mockResolvedValue(createMockAuthResponse(true, {
+			ok: true,
+			result: {
+				authorized: false,
+				project: {
+					id: '',
+					project: ''
+				}
+			}
+		}))
+
+		const body = 'hello world'
+		const resp = await worker.fetch('/?project=invalid&filename=hello.txt', {
+			method: 'POST',
+			body,
+			headers: {
+				'content-length': body.length,
+				authorization: 'bearer invalid'
+			}
+		})
+		expect(resp.ok).toBeTruthy()
+		expect(resp.status).toEqual(200)
+		const res = await resp.json()
+		expect(res.ok).toBeFalsy()
+		expect(res.result).toBeUndefined()
+		expect(res.error.message).toEqual('api: unauthorized')
+	})
+
+	test('invalid auth header', async () => {
 		fetch.mockResolvedValue(createMockAuthResponse(true, {
 			ok: true,
 			result: {

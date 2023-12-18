@@ -26,9 +26,10 @@ export async function authorized (request, ctx) {
 			}
 		}
 	}
+	const url = new URL(request.url)
 
-	const project = request.headers.get('param-project') ?? ''
-	const projectId = request.headers.get('param-project-id') ?? ''
+	const project = url.searchParams.get('project') ?? request.headers.get('param-project') ?? ''
+	const projectId = url.searchParams.get('projectId') ?? request.headers.get('param-project-id') ?? ''
 	if (!project && !projectId) {
 		return unauthorizedResult
 	}
