@@ -2,20 +2,14 @@ import dayjs from 'dayjs'
 import { format as formatDate } from './date'
 import { authorized } from './auth'
 
-/**
- * @typedef Env
- * @property {import('@cloudflare/workers-types').R2Bucket} BUCKET
- * @property {import('@cloudflare/workers-types').AnalyticsEngineDataset} WAE
- */
-
 const baseUrl = 'https://dropbox.deploys.app/'
 
 export default {
 	/**
-	 * @param {import('@cloudflare/workers-types').Request} request
+	 * @param {Request} request
 	 * @param {Env} env
-	 * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
-	 * @returns {Promise<import('@cloudflare/workers-types').Response>}
+	 * @param {ExecutionContext} ctx
+	 * @returns {Promise<Response>}
 	 **/
 	async fetch (request, env, ctx) {
 		if (request.method !== 'POST') {
@@ -59,9 +53,9 @@ export default {
 		env.WAE?.writeDataPoint({
 			blobs: [
 				auth.project.id,
-				request.cf.colo,
-				request.cf.country,
-				ttlDays
+				String(request.cf?.colo ?? ''),
+				String(request.cf?.country ?? ''),
+				String(ttlDays)
 			],
 			doubles: [bodySize],
 			indexes: [auth.project.id]

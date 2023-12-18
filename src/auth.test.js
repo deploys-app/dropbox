@@ -9,7 +9,8 @@ global.caches = {
 	}
 }
 const ctx = {
-	waitUntil: () => {}
+	waitUntil: () => {},
+	passThroughOnException: () => {}
 }
 
 describe('auth', () => {

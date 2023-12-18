@@ -12,6 +12,10 @@ routes = [
 binding = "BUCKET"
 bucket_name = "deploys-dropbox"
 
+[[d1_databases]]
+binding = "DB"
+database_id = "9f1aa7d8-da53-46e4-b808-01e8a1503005"
+
 [[analytics_engine_datasets]]
 binding = "WAE"
 dataset = "deploys_dropbox"

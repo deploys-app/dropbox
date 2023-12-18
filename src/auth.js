@@ -1,17 +1,5 @@
 const permission = 'dropbox.upload'
 
-/**
- * @typedef Project
- * @property {string} id
- * @property {string} project
- */
-
-/**
- * @typedef AuthorizedResult
- * @property {boolean} authorized
- * @property {Project?} project
- */
-
 /** @type {AuthorizedResult} */
 const unauthorizedResult = Object.freeze({
 	authorized: false
@@ -22,8 +10,8 @@ const authEndpoint = 'https://api.deploys.app/me.authorized'
 /**
  * Checks if the request is authorized based on the provided headers.
  *
- * @param {import('@cloudflare/workers-types').Request} request
- * @param {import('@cloudflare/workers-types').ExecutionContext} ctx
+ * @param {Request} request
+ * @param {ExecutionContext} ctx
  * @returns {Promise<AuthorizedResult>}
  */
 export async function authorized (request, ctx) {
