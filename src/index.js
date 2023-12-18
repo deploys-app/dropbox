@@ -27,7 +27,7 @@ export default {
 		if (!ttlDays || ttlDays < 1 || ttlDays > 7) {
 			ttlDays = 1
 		}
-		const filename = request.headers.get('param-filename')
+		const filename = request.headers.get('param-filename') ?? ''
 
 		const bodySize = Number(request.headers.get('content-length'))
 		if (!request.body || bodySize === 0) {
@@ -60,6 +60,10 @@ export default {
 			doubles: [bodySize],
 			indexes: [auth.project.id]
 		})
+		ctx.waitUntil(env.DB.prepare(`
+			insert into files (fn, project_id, size, filename, ttl)
+			values (?, ?, ?, ?, ?)
+		`).bind(fn, auth.project.id, bodySize, filename, ttlDays).run())
 
 		return new Response(JSON.stringify({
 			ok: true,
