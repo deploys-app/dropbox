@@ -2,7 +2,7 @@ import dayjs from 'dayjs'
 import { format as formatDate } from './date'
 import { authorized } from './auth'
 
-const baseUrl = 'https://dropbox.deploys.app/'
+const baseUrl = 'https://dropbox-files.deploys.app/'
 
 export default {
 	/**
