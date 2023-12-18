@@ -41,6 +41,18 @@ describe('dropbox', () => {
 		expect(resp.status).toEqual(200)
 	})
 
+	test('get non index', async () => {
+		const resp = await worker.fetch('/hello')
+		expect(resp.ok).toBeFalsy()
+		expect(resp.status).toEqual(404)
+		expect(await resp.json()).toEqual({
+			ok: false,
+			error: {
+				message: 'api: not found'
+			}
+		})
+	})
+
 	test('upload empty body', async () => {
 		const resp = await worker.fetch('/', {
 			method: 'POST'

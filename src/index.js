@@ -12,6 +12,11 @@ export default {
 	 * @returns {Promise<Response>}
 	 **/
 	async fetch (request, env, ctx) {
+		const url = new URL(request.url)
+		if (url.pathname !== '/') {
+			return failResponse('api: not found', 404)
+		}
+
 		if (request.method !== 'POST') {
 			return new Response('Deploys.app Dropbox Service')
 		}
