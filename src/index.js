@@ -63,7 +63,7 @@ export default {
 		ctx.waitUntil(env.DB.prepare(`
 			insert into files (fn, project_id, size, filename, ttl)
 			values (?, ?, ?, ?, ?)
-		`).bind([fn, auth.project.id, bodySize, filename, ttlDays]).run())
+		`).bind(fn, auth.project.id, bodySize, filename, ttlDays).run())
 
 		return new Response(JSON.stringify({
 			ok: true,
