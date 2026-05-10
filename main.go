@@ -55,7 +55,7 @@ func main() {
 
 	app := &App{
 		Bucket:  storageClient.Bucket(config.MustString("bucket_name")),
-		BaseURL: config.StringDefault("base_url", "https://dropbox.deploys-files.app/"),
+		BaseURL: config.StringDefault("base_url", "https://dropbox-files.deploys.app/"),
 	}
 
 	mux := http.NewServeMux()
