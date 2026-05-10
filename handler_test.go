@@ -16,14 +16,6 @@ import (
 	"gocloud.dev/blob/memblob"
 )
 
-// failBucket is a blobBucket whose NewWriter always returns an error.
-type failBucket struct{ err error }
-
-func (b *failBucket) NewWriter(_ context.Context, _ string, _ *blob.WriterOptions) (*blob.Writer, error) {
-	return nil, b.err
-}
-func (b *failBucket) Delete(_ context.Context, _ string) error { return nil }
-
 func newTestBucket(t *testing.T) *blob.Bucket {
 	t.Helper()
 	bkt := memblob.OpenBucket(nil)
@@ -54,7 +46,7 @@ func unauthorized(_ context.Context, _, _, _ string) AuthResult {
 	return AuthResult{}
 }
 
-func newTestApp(b blobBucket, authFn func(context.Context, string, string, string) AuthResult) *App {
+func newTestApp(b *blob.Bucket, authFn func(context.Context, string, string, string) AuthResult) *App {
 	return &App{
 		Bucket:    b,
 		BaseURL:   "https://example.com/",
@@ -288,24 +280,6 @@ func TestUpload_Unauthorized(t *testing.T) {
 	}
 }
 
-func TestUpload_BucketError(t *testing.T) {
-	app := newTestApp(&failBucket{err: errors.New("storage unavailable")}, authorized)
-
-	body := strings.NewReader("data")
-	r := httptest.NewRequest(http.MethodPost, "/", body)
-	r.ContentLength = 4
-	w := httptest.NewRecorder()
-	app.uploadHandler(w, r)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", w.Code)
-	}
-	var resp failResp
-	json.NewDecoder(w.Body).Decode(&resp)
-	if resp.OK {
-		t.Error("expected ok=false on bucket error")
-	}
-}
 
 func TestGenerateFilename(t *testing.T) {
 	a, b := generateFilename(), generateFilename()

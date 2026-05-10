@@ -17,13 +17,8 @@ import (
 	"gocloud.dev/blob"
 )
 
-type blobBucket interface {
-	NewWriter(ctx context.Context, key string, opts *blob.WriterOptions) (*blob.Writer, error)
-	Delete(ctx context.Context, key string) error
-}
-
 type App struct {
-	Bucket         blobBucket
+	Bucket         *blob.Bucket
 	BaseURL        string
 	InternalSecret string
 	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
