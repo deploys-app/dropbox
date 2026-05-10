@@ -66,7 +66,7 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlDays) * 24 * time.Hour)
-	fn := strconv.Itoa(ttlDays) + generateFilename()
+	fn := generateFilename()
 
 	opts := &blob.WriterOptions{
 		CacheControl: "public, max-age=86400",

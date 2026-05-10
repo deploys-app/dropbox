@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,8 +136,8 @@ func TestUpload_Success(t *testing.T) {
 	if !resp.OK {
 		t.Fatal("expected ok=true")
 	}
-	if !strings.HasPrefix(resp.Result.DownloadURL, "https://example.com/1") {
-		t.Errorf("downloadUrl = %q, want prefix with default TTL 1", resp.Result.DownloadURL)
+	if !strings.HasPrefix(resp.Result.DownloadURL, "https://example.com/") {
+		t.Errorf("downloadUrl = %q, want prefix https://example.com/", resp.Result.DownloadURL)
 	}
 
 	expiresAt, err := time.Parse(time.RFC3339, resp.Result.ExpiresAt)
@@ -191,9 +191,14 @@ func TestUpload_TTL(t *testing.T) {
 			if !resp.OK {
 				t.Fatal("expected ok=true")
 			}
-			wantPrefix := "https://example.com/" + strconv.Itoa(tc.wantTTL)
-			if !strings.HasPrefix(resp.Result.DownloadURL, wantPrefix) {
-				t.Errorf("downloadUrl = %q, want prefix %q", resp.Result.DownloadURL, wantPrefix)
+			expiresAt, err := time.Parse(time.RFC3339, resp.Result.ExpiresAt)
+			if err != nil {
+				t.Fatalf("parse expiresAt: %v", err)
+			}
+			wantDiff := time.Duration(tc.wantTTL) * 24 * time.Hour
+			gotDiff := time.Until(expiresAt)
+			if math.Abs(float64(gotDiff-wantDiff)) > float64(time.Hour) {
+				t.Errorf("expiresAt diff = %v, want ~%v", gotDiff, wantDiff)
 			}
 		})
 	}
@@ -213,8 +218,9 @@ func TestUpload_TTLFromHeader(t *testing.T) {
 
 	var resp uploadResp
 	json.NewDecoder(w.Body).Decode(&resp)
-	if !strings.HasPrefix(resp.Result.DownloadURL, "https://example.com/5") {
-		t.Errorf("downloadUrl = %q, want TTL 5 from header", resp.Result.DownloadURL)
+	expiresAt, _ := time.Parse(time.RFC3339, resp.Result.ExpiresAt)
+	if diff := time.Until(expiresAt); math.Abs(float64(diff-5*24*time.Hour)) > float64(time.Hour) {
+		t.Errorf("expiresAt diff = %v, want ~120h (TTL 5 from header)", diff)
 	}
 }
 
@@ -232,8 +238,9 @@ func TestUpload_QueryParamOverridesHeader(t *testing.T) {
 
 	var resp uploadResp
 	json.NewDecoder(w.Body).Decode(&resp)
-	if !strings.HasPrefix(resp.Result.DownloadURL, "https://example.com/6") {
-		t.Errorf("downloadUrl = %q, query param should take precedence over header", resp.Result.DownloadURL)
+	expiresAt, _ := time.Parse(time.RFC3339, resp.Result.ExpiresAt)
+	if diff := time.Until(expiresAt); math.Abs(float64(diff-6*24*time.Hour)) > float64(time.Hour) {
+		t.Errorf("expiresAt diff = %v, want ~144h (TTL 6 from query param)", diff)
 	}
 }
 
