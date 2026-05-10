@@ -7,6 +7,8 @@ import (
 
 	"github.com/acoshift/pgsql/pgctx"
 	"github.com/cockroachdb/cockroach-go/v2/testserver"
+
+	"moonrhythm/dropbox/schema"
 )
 
 // Context holds the test server and DB connection.
@@ -38,22 +40,7 @@ func (c *Context) setup() {
 		return
 	}
 
-	err = migrate(context.Background(), c.DB)
-}
-
-func migrate(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS files (
-			fn         TEXT        NOT NULL,
-			project_id TEXT        NOT NULL,
-			size       BIGINT      NOT NULL,
-			filename   TEXT        NOT NULL,
-			ttl        INTEGER     NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-		);
-		CREATE INDEX IF NOT EXISTS files_project_id_created_at_idx ON files (project_id, created_at);
-	`)
-	return err
+	err = schema.Migrate(context.Background(), c.DB)
 }
 
 func (c *Context) Teardown() {
