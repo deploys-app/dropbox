@@ -22,7 +22,6 @@ type App struct {
 	BaseURL        string
 	InternalSecret string
 	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
-	execDB         func(ctx context.Context, query string, args ...any) error
 }
 
 func (a *App) routes() http.Handler {
@@ -40,14 +39,6 @@ func (a *App) auth(ctx context.Context, auth, project, projectID string) AuthRes
 		return a.checkAuth(ctx, auth, project, projectID)
 	}
 	return checkAuth(ctx, auth, project, projectID)
-}
-
-func (a *App) dbExec(ctx context.Context, query string, args ...any) error {
-	if a.execDB != nil {
-		return a.execDB(ctx, query, args...)
-	}
-	_, err := pgctx.Exec(ctx, query, args...)
-	return err
 }
 
 func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +93,7 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.dbExec(r.Context(), `
+	if _, err := pgctx.Exec(r.Context(), `
 		INSERT INTO files (fn, project_id, size, filename, ttl)
 		VALUES ($1, $2, $3, $4, $5)
 	`, fn, authResult.Project.ID, r.ContentLength, filename, ttlDays); err != nil {

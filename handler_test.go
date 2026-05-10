@@ -46,12 +46,11 @@ func unauthorized(_ context.Context, _, _, _ string) AuthResult {
 	return AuthResult{}
 }
 
-func newTestApp(b *blob.Bucket, authFn func(context.Context, string, string, string) AuthResult) *App {
+func newTestApp(bkt *blob.Bucket, authFn func(context.Context, string, string, string) AuthResult) *App {
 	return &App{
-		Bucket:    b,
+		Bucket:    bkt,
 		BaseURL:   "https://example.com/",
 		checkAuth: authFn,
-		execDB:    func(_ context.Context, _ string, _ ...any) error { return nil },
 	}
 }
 
@@ -117,9 +116,11 @@ func TestUpload_EmptyBody(t *testing.T) {
 func TestUpload_Success(t *testing.T) {
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
+	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 	body := strings.NewReader("hello world")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
+	r = r.WithContext(testDB.Ctx())
 	r.ContentLength = int64(len("hello world"))
 	w := httptest.NewRecorder()
 	app.uploadHandler(w, r)
@@ -150,6 +151,9 @@ func TestUpload_Success(t *testing.T) {
 	if n := countObjects(t, bkt); n != 1 {
 		t.Errorf("bucket objects = %d, want 1", n)
 	}
+	if n := testDB.CountFiles(t); n != 1 {
+		t.Errorf("db files = %d, want 1", n)
+	}
 }
 
 func TestUpload_TTL(t *testing.T) {
@@ -169,6 +173,7 @@ func TestUpload_TTL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("ttl="+tc.ttl, func(t *testing.T) {
 			app := newTestApp(newTestBucket(t), authorized)
+			t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 			url := "/"
 			if tc.ttl != "" {
@@ -176,6 +181,7 @@ func TestUpload_TTL(t *testing.T) {
 			}
 			body := strings.NewReader("data")
 			r := httptest.NewRequest(http.MethodPost, url, body)
+			r = r.WithContext(testDB.Ctx())
 			r.ContentLength = 4
 			w := httptest.NewRecorder()
 			app.uploadHandler(w, r)
@@ -195,9 +201,11 @@ func TestUpload_TTL(t *testing.T) {
 
 func TestUpload_TTLFromHeader(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
+	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
+	r = r.WithContext(testDB.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-ttl", "5")
 	w := httptest.NewRecorder()
@@ -212,9 +220,11 @@ func TestUpload_TTLFromHeader(t *testing.T) {
 
 func TestUpload_QueryParamOverridesHeader(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
+	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?ttl=6", body)
+	r = r.WithContext(testDB.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-ttl", "2")
 	w := httptest.NewRecorder()
@@ -229,9 +239,11 @@ func TestUpload_QueryParamOverridesHeader(t *testing.T) {
 
 func TestUpload_FilenameFromQuery(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
+	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?filename=report.pdf", body)
+	r = r.WithContext(testDB.Ctx())
 	r.ContentLength = 4
 	w := httptest.NewRecorder()
 	app.uploadHandler(w, r)
@@ -245,9 +257,11 @@ func TestUpload_FilenameFromQuery(t *testing.T) {
 
 func TestUpload_FilenameFromHeader(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
+	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
+	r = r.WithContext(testDB.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-filename", "report.pdf")
 	w := httptest.NewRecorder()
@@ -279,7 +293,6 @@ func TestUpload_Unauthorized(t *testing.T) {
 		t.Errorf("message = %q", resp.Error.Message)
 	}
 }
-
 
 func TestGenerateFilename(t *testing.T) {
 	a, b := generateFilename(), generateFilename()
