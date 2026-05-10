@@ -11,29 +11,39 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gocloud.dev/blob"
+	"gocloud.dev/blob/memblob"
 )
 
-// fakeBucket is an in-memory uploadBucket for tests.
-type fakeBucket struct {
-	uploads map[string][]byte
-	err     error
+// failBucket is a blobBucket whose NewWriter always returns an error.
+type failBucket struct{ err error }
+
+func (b *failBucket) NewWriter(_ context.Context, _ string, _ *blob.WriterOptions) (*blob.Writer, error) {
+	return nil, b.err
+}
+func (b *failBucket) Delete(_ context.Context, _ string) error { return nil }
+
+func newTestBucket(t *testing.T) *blob.Bucket {
+	t.Helper()
+	bkt := memblob.OpenBucket(nil)
+	t.Cleanup(func() { bkt.Close() })
+	return bkt
 }
 
-func (b *fakeBucket) upload(_ context.Context, name, _, _ string, r io.Reader) error {
-	if b.err != nil {
-		return b.err
+func countObjects(t *testing.T, bkt *blob.Bucket) int {
+	t.Helper()
+	iter := bkt.List(nil)
+	count := 0
+	for {
+		if _, err := iter.Next(context.Background()); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			t.Fatal(err)
+		}
+		count++
 	}
-	data, _ := io.ReadAll(r)
-	if b.uploads == nil {
-		b.uploads = make(map[string][]byte)
-	}
-	b.uploads[name] = data
-	return nil
-}
-
-func (b *fakeBucket) delete(_ context.Context, name string) error {
-	delete(b.uploads, name)
-	return nil
+	return count
 }
 
 func authorized(_ context.Context, _, _, _ string) AuthResult {
@@ -44,7 +54,7 @@ func unauthorized(_ context.Context, _, _, _ string) AuthResult {
 	return AuthResult{}
 }
 
-func newTestApp(b *fakeBucket, authFn func(context.Context, string, string, string) AuthResult) *App {
+func newTestApp(b blobBucket, authFn func(context.Context, string, string, string) AuthResult) *App {
 	return &App{
 		Bucket:    b,
 		BaseURL:   "https://example.com/",
@@ -71,7 +81,7 @@ type failResp struct {
 }
 
 func TestGetRoot(t *testing.T) {
-	app := newTestApp(&fakeBucket{}, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -85,7 +95,7 @@ func TestGetRoot(t *testing.T) {
 }
 
 func TestNonRootPath(t *testing.T) {
-	app := newTestApp(&fakeBucket{}, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 	r := httptest.NewRequest(http.MethodGet, "/other", nil)
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -96,7 +106,7 @@ func TestNonRootPath(t *testing.T) {
 }
 
 func TestUpload_EmptyBody(t *testing.T) {
-	app := newTestApp(&fakeBucket{}, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 	r := httptest.NewRequest(http.MethodPost, "/", nil)
 	r.ContentLength = 0
 	w := httptest.NewRecorder()
@@ -113,8 +123,8 @@ func TestUpload_EmptyBody(t *testing.T) {
 }
 
 func TestUpload_Success(t *testing.T) {
-	bucket := &fakeBucket{}
-	app := newTestApp(bucket, authorized)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
 
 	body := strings.NewReader("hello world")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
@@ -145,8 +155,8 @@ func TestUpload_Success(t *testing.T) {
 	if diff < 23*time.Hour || diff > 25*time.Hour {
 		t.Errorf("expiresAt diff = %v, want ~24h", diff)
 	}
-	if len(bucket.uploads) != 1 {
-		t.Errorf("bucket uploads = %d, want 1", len(bucket.uploads))
+	if n := countObjects(t, bkt); n != 1 {
+		t.Errorf("bucket objects = %d, want 1", n)
 	}
 }
 
@@ -166,8 +176,7 @@ func TestUpload_TTL(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run("ttl="+tc.ttl, func(t *testing.T) {
-			bucket := &fakeBucket{}
-			app := newTestApp(bucket, authorized)
+			app := newTestApp(newTestBucket(t), authorized)
 
 			url := "/"
 			if tc.ttl != "" {
@@ -193,8 +202,7 @@ func TestUpload_TTL(t *testing.T) {
 }
 
 func TestUpload_TTLFromHeader(t *testing.T) {
-	bucket := &fakeBucket{}
-	app := newTestApp(bucket, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
@@ -211,8 +219,7 @@ func TestUpload_TTLFromHeader(t *testing.T) {
 }
 
 func TestUpload_QueryParamOverridesHeader(t *testing.T) {
-	bucket := &fakeBucket{}
-	app := newTestApp(bucket, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?ttl=6", body)
@@ -229,7 +236,7 @@ func TestUpload_QueryParamOverridesHeader(t *testing.T) {
 }
 
 func TestUpload_FilenameFromQuery(t *testing.T) {
-	app := newTestApp(&fakeBucket{}, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?filename=report.pdf", body)
@@ -245,7 +252,7 @@ func TestUpload_FilenameFromQuery(t *testing.T) {
 }
 
 func TestUpload_FilenameFromHeader(t *testing.T) {
-	app := newTestApp(&fakeBucket{}, authorized)
+	app := newTestApp(newTestBucket(t), authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
@@ -262,7 +269,7 @@ func TestUpload_FilenameFromHeader(t *testing.T) {
 }
 
 func TestUpload_Unauthorized(t *testing.T) {
-	app := newTestApp(&fakeBucket{}, unauthorized)
+	app := newTestApp(newTestBucket(t), unauthorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?project=myproject", body)
@@ -282,7 +289,7 @@ func TestUpload_Unauthorized(t *testing.T) {
 }
 
 func TestUpload_BucketError(t *testing.T) {
-	app := newTestApp(&fakeBucket{err: errors.New("storage unavailable")}, authorized)
+	app := newTestApp(&failBucket{err: errors.New("storage unavailable")}, authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)

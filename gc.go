@@ -7,6 +7,7 @@ import (
 
 	"github.com/acoshift/pgsql"
 	"github.com/acoshift/pgsql/pgctx"
+	"gocloud.dev/gcerrors"
 )
 
 func (a *App) gcHandler(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +43,7 @@ func (a *App) runGC(ctx context.Context) error {
 	slog.Info("gc: found expired files", "count", len(fns))
 
 	for _, fn := range fns {
-		if err := a.Bucket.delete(ctx, fn); err != nil {
+		if err := a.Bucket.Delete(ctx, fn); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
 			slog.Error("gc: delete from storage", "fn", fn, "error", err)
 			continue
 		}

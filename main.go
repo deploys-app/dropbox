@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-	"cloud.google.com/go/storage"
 	"github.com/acoshift/configfile"
 	"github.com/acoshift/pgsql/pgctx"
 	_ "github.com/lib/pq"
@@ -15,6 +14,8 @@ import (
 	"github.com/moonrhythm/parapet"
 	"github.com/moonrhythm/parapet/pkg/healthz"
 	"github.com/moonrhythm/parapet/pkg/logger"
+	"gocloud.dev/blob"
+	_ "gocloud.dev/blob/gcsblob"
 )
 
 var config = configfile.NewEnvReader()
@@ -45,15 +46,15 @@ func main() {
 	db.SetMaxOpenConns(10)
 	db.SetConnMaxLifetime(10 * time.Minute)
 
-	storageClient, err := storage.NewClient(ctx)
+	bkt, err := blob.OpenBucket(ctx, "gs://"+config.MustString("bucket_name"))
 	if err != nil {
-		slog.Error("create storage client", "error", err)
+		slog.Error("open bucket", "error", err)
 		os.Exit(1)
 	}
-	defer storageClient.Close()
+	defer bkt.Close()
 
 	app := &App{
-		Bucket:         &gcsBucket{storageClient.Bucket(config.MustString("bucket_name"))},
+		Bucket:         bkt,
 		BaseURL:        config.StringDefault("base_url", "https://dropbox-files.deploys.app/"),
 		InternalSecret: config.String("internal_secret"),
 	}

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,42 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/storage"
 	"github.com/acoshift/pgsql/pgctx"
+	"gocloud.dev/blob"
 )
 
-type bucket interface {
-	upload(ctx context.Context, name, cacheControl, contentDisposition string, r io.Reader) error
-	delete(ctx context.Context, name string) error
-}
-
-type gcsBucket struct {
-	handle *storage.BucketHandle
-}
-
-func (b *gcsBucket) upload(ctx context.Context, name, cacheControl, contentDisposition string, r io.Reader) error {
-	wc := b.handle.Object(name).NewWriter(ctx)
-	wc.CacheControl = cacheControl
-	if contentDisposition != "" {
-		wc.ContentDisposition = contentDisposition
-	}
-	if _, err := io.Copy(wc, r); err != nil {
-		_ = wc.Close()
-		return err
-	}
-	return wc.Close()
-}
-
-func (b *gcsBucket) delete(ctx context.Context, name string) error {
-	err := b.handle.Object(name).Delete(ctx)
-	if errors.Is(err, storage.ErrObjectNotExist) {
-		return nil
-	}
-	return err
+type blobBucket interface {
+	NewWriter(ctx context.Context, key string, opts *blob.WriterOptions) (*blob.Writer, error)
+	Delete(ctx context.Context, key string) error
 }
 
 type App struct {
-	Bucket         bucket
+	Bucket         blobBucket
 	BaseURL        string
 	InternalSecret string
 	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
@@ -108,14 +82,27 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlDays) * 24 * time.Hour)
 	fn := strconv.Itoa(ttlDays) + generateFilename()
 
-	cacheControl := "public, max-age=86400"
-	contentDisposition := ""
+	opts := &blob.WriterOptions{
+		CacheControl: "public, max-age=86400",
+	}
 	if filename != "" {
-		contentDisposition = fmt.Sprintf(`attachment; filename="%s"`, escapeFilename(filename))
+		opts.ContentDisposition = fmt.Sprintf(`attachment; filename="%s"`, escapeFilename(filename))
 	}
 
-	if err := a.Bucket.upload(r.Context(), fn, cacheControl, contentDisposition, r.Body); err != nil {
+	bw, err := a.Bucket.NewWriter(r.Context(), fn, opts)
+	if err != nil {
 		slog.Error("upload file", "error", err)
+		jsonFail(w, "failed to upload", http.StatusInternalServerError)
+		return
+	}
+	if _, err := io.Copy(bw, r.Body); err != nil {
+		_ = bw.Close()
+		slog.Error("upload file", "error", err)
+		jsonFail(w, "failed to upload", http.StatusInternalServerError)
+		return
+	}
+	if err := bw.Close(); err != nil {
+		slog.Error("finalize upload", "error", err)
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
 		return
 	}
