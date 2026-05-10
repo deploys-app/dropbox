@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -16,9 +17,56 @@ import (
 	"github.com/acoshift/pgsql/pgctx"
 )
 
+type uploadBucket interface {
+	upload(ctx context.Context, name, cacheControl, contentDisposition string, r io.Reader) error
+}
+
+type gcsBucket struct {
+	handle *storage.BucketHandle
+}
+
+func (b *gcsBucket) upload(ctx context.Context, name, cacheControl, contentDisposition string, r io.Reader) error {
+	wc := b.handle.Object(name).NewWriter(ctx)
+	wc.CacheControl = cacheControl
+	if contentDisposition != "" {
+		wc.ContentDisposition = contentDisposition
+	}
+	if _, err := io.Copy(wc, r); err != nil {
+		_ = wc.Close()
+		return err
+	}
+	return wc.Close()
+}
+
 type App struct {
-	Bucket  *storage.BucketHandle
-	BaseURL string
+	Bucket    uploadBucket
+	BaseURL   string
+	checkAuth func(ctx context.Context, auth, project, projectID string) AuthResult
+	execDB    func(ctx context.Context, query string, args ...any) error
+}
+
+func (a *App) routes() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Deploys.app Dropbox Service"))
+	})
+	mux.HandleFunc("POST /{$}", a.uploadHandler)
+	return mux
+}
+
+func (a *App) auth(ctx context.Context, auth, project, projectID string) AuthResult {
+	if a.checkAuth != nil {
+		return a.checkAuth(ctx, auth, project, projectID)
+	}
+	return checkAuth(ctx, auth, project, projectID)
+}
+
+func (a *App) dbExec(ctx context.Context, query string, args ...any) error {
+	if a.execDB != nil {
+		return a.execDB(ctx, query, args...)
+	}
+	_, err := pgctx.Exec(ctx, query, args...)
+	return err
 }
 
 func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +74,7 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	project := firstNonEmpty(r.URL.Query().Get("project"), r.Header.Get("param-project"))
 	projectID := firstNonEmpty(r.URL.Query().Get("projectId"), r.Header.Get("param-project-id"))
 
-	authResult := checkAuth(r.Context(), auth, project, projectID)
+	authResult := a.auth(r.Context(), auth, project, projectID)
 	if !authResult.Authorized {
 		jsonFail(w, "api: unauthorized", http.StatusOK)
 		return
@@ -48,26 +96,19 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlDays) * 24 * time.Hour)
 	fn := strconv.Itoa(ttlDays) + generateFilename()
 
-	obj := a.Bucket.Object(fn)
-	wc := obj.NewWriter(r.Context())
-	wc.CacheControl = "public, max-age=86400"
+	cacheControl := "public, max-age=86400"
+	contentDisposition := ""
 	if filename != "" {
-		wc.ContentDisposition = fmt.Sprintf(`attachment; filename="%s"`, escapeFilename(filename))
+		contentDisposition = fmt.Sprintf(`attachment; filename="%s"`, escapeFilename(filename))
 	}
 
-	if _, err := io.Copy(wc, r.Body); err != nil {
-		_ = wc.Close()
+	if err := a.Bucket.upload(r.Context(), fn, cacheControl, contentDisposition, r.Body); err != nil {
 		slog.Error("upload file", "error", err)
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
 		return
 	}
-	if err := wc.Close(); err != nil {
-		slog.Error("finalize upload", "error", err)
-		jsonFail(w, "failed to upload", http.StatusInternalServerError)
-		return
-	}
 
-	if _, err := pgctx.Exec(r.Context(), `
+	if err := a.dbExec(r.Context(), `
 		INSERT INTO files (fn, project_id, size, filename, ttl)
 		VALUES ($1, $2, $3, $4, $5)
 	`, fn, authResult.Project.ID, r.ContentLength, filename, ttlDays); err != nil {

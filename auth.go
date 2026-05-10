@@ -10,10 +10,11 @@ import (
 	"github.com/moonrhythm/cachestore"
 )
 
+var authEndpoint = "https://api.deploys.app/me.authorized"
+
 const (
-	authEndpoint = "https://api.deploys.app/me.authorized"
-	cacheTTL     = 30 * time.Second
-	permission   = "dropbox.upload"
+	cacheTTL   = 30 * time.Second
+	permission = "dropbox.upload"
 )
 
 type Project struct {

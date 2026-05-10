@@ -6,22 +6,27 @@ Temporary file storage
 
 ```shell
 $ asdf install
-$ bun install
-$ bun start
+$ go run .
 ```
 
 ## Testing
 
 ```shell
-$ bun run lint
-$ bun run test
+$ go test ./...
 ```
 
 ## Deployment
 
-```shell
-$ bun run deploy
-```
+Docker image is built and pushed automatically on push to `main`. See `.github/workflows/build.yaml`.
+
+**Required environment variables:**
+
+| Variable      | Description                                              |
+|---------------|----------------------------------------------------------|
+| `db_url`      | PostgreSQL connection string                             |
+| `bucket_name` | GCS bucket name                                          |
+| `base_url`    | Download URL prefix (default: `https://dropbox-files.deploys.app/`) |
+| `PORT`        | Listen port (default: `8080`)                            |
 
 ---
 
@@ -39,22 +44,23 @@ Endpoint: https://dropbox.deploys.app/
 
 #### Headers
 
-| Name           | Type     | Data Type | Description                     |
-|----------------|----------|-----------|---------------------------------|
-| Authorization  | required | string    | Authorization token             |
-| Param-Ttl      | optional | number    | 1-7, default 1                  |
-| Param-Project  | required | string    | Project name                    |
-| Param-Filename | optional | string    | Filename in Content-Disposition |
+| Name            | Type     | Data Type | Description                     |
+|-----------------|----------|-----------|---------------------------------|
+| Authorization   | required | string    | Authorization token             |
+| Param-Ttl       | optional | number    | 1-7, default 1                  |
+| Param-Project   | required | string    | Project name                    |
+| Param-Filename  | optional | string    | Filename in Content-Disposition |
 
 #### Query Parameters
 
-| Name     | Type     | Data Type | Description                     |
-|----------|----------|-----------|---------------------------------|
-| ttl      | optional | number    | 1-7, default 1                  |
-| project  | required | string    | Project name                    |
-| filename | optional | string    | Filename in Content-Disposition |
+| Name       | Type     | Data Type | Description                     |
+|------------|----------|-----------|---------------------------------|
+| ttl        | optional | number    | 1-7, default 1                  |
+| project    | required | string    | Project name                    |
+| projectId  | optional | string    | Project ID (alternative to project name) |
+| filename   | optional | string    | Filename in Content-Disposition |
 
-> ttl, project, filename can be passed as query parameters or headers
+> Query parameters take precedence over headers when both are provided.
 
 #### Body
 
@@ -68,7 +74,7 @@ File data binary
 {
 	"ok": true,
 	"result": {
-		"downloadUrl": "https://dropbox-files.deploys.app/filename",
+		"downloadUrl": "https://dropbox-files.deploys.app/1<filename>",
 		"expiresAt": "2020-01-01T01:01:01Z"
 	}
 }
@@ -89,22 +95,14 @@ File data binary
 
 ```shell
 # using query parameters
-$ http -a user:pass https://dropbox.deploys.app/?ttl=1&project=my-project \
+$ http POST https://dropbox.deploys.app/?ttl=1&project=my-project \
+	Authorization:"Bearer <token>" \
 	< file
 
 # using headers
-$ http -a user:pass https://dropbox.deploys.app/ \
+$ http POST https://dropbox.deploys.app/ \
+	Authorization:"Bearer <token>" \
 	param-ttl:1 \
 	param-project:my-project \
 	< file
-```
-
-### Upload without Authorization
-
-In alpha version, you can upload without Authorization, but its rate-limited.
-
-#### Example HTTPie without Authorization
-
-```shell
-http https://dropbox.deploys.app/ < file
 ```

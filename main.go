@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -54,15 +53,9 @@ func main() {
 	defer storageClient.Close()
 
 	app := &App{
-		Bucket:  storageClient.Bucket(config.MustString("bucket_name")),
+		Bucket:  &gcsBucket{storageClient.Bucket(config.MustString("bucket_name"))},
 		BaseURL: config.StringDefault("base_url", "https://dropbox-files.deploys.app/"),
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Deploys.app Dropbox Service"))
-	})
-	mux.HandleFunc("POST /{$}", app.uploadHandler)
 
 	port := config.StringDefault("PORT", "8080")
 	slog.Info("start dropbox", "addr", ":"+port)
@@ -72,7 +65,7 @@ func main() {
 	srv.Use(healthz.New())
 	srv.Use(logger.Stdout())
 	srv.UseFunc(pgctx.Middleware(db))
-	srv.Handler = mux
+	srv.Handler = app.routes()
 
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("listen and serve", "error", err)
