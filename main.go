@@ -53,8 +53,9 @@ func main() {
 	defer storageClient.Close()
 
 	app := &App{
-		Bucket:  &gcsBucket{storageClient.Bucket(config.MustString("bucket_name"))},
-		BaseURL: config.StringDefault("base_url", "https://dropbox-files.deploys.app/"),
+		Bucket:         &gcsBucket{storageClient.Bucket(config.MustString("bucket_name"))},
+		BaseURL:        config.StringDefault("base_url", "https://dropbox-files.deploys.app/"),
+		InternalSecret: config.String("internal_secret"),
 	}
 
 	port := config.StringDefault("PORT", "8080")

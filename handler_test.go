@@ -31,6 +31,11 @@ func (b *fakeBucket) upload(_ context.Context, name, _, _ string, r io.Reader) e
 	return nil
 }
 
+func (b *fakeBucket) delete(_ context.Context, name string) error {
+	delete(b.uploads, name)
+	return nil
+}
+
 func authorized(_ context.Context, _, _, _ string) AuthResult {
 	return AuthResult{Authorized: true, Project: Project{ID: "proj-1", Project: "test"}}
 }

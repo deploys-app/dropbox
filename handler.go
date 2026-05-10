@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,8 +18,9 @@ import (
 	"github.com/acoshift/pgsql/pgctx"
 )
 
-type uploadBucket interface {
+type bucket interface {
 	upload(ctx context.Context, name, cacheControl, contentDisposition string, r io.Reader) error
+	delete(ctx context.Context, name string) error
 }
 
 type gcsBucket struct {
@@ -38,11 +40,20 @@ func (b *gcsBucket) upload(ctx context.Context, name, cacheControl, contentDispo
 	return wc.Close()
 }
 
+func (b *gcsBucket) delete(ctx context.Context, name string) error {
+	err := b.handle.Object(name).Delete(ctx)
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		return nil
+	}
+	return err
+}
+
 type App struct {
-	Bucket    uploadBucket
-	BaseURL   string
-	checkAuth func(ctx context.Context, auth, project, projectID string) AuthResult
-	execDB    func(ctx context.Context, query string, args ...any) error
+	Bucket         bucket
+	BaseURL        string
+	InternalSecret string
+	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
+	execDB         func(ctx context.Context, query string, args ...any) error
 }
 
 func (a *App) routes() http.Handler {
@@ -51,6 +62,7 @@ func (a *App) routes() http.Handler {
 		w.Write([]byte("Deploys.app Dropbox Service"))
 	})
 	mux.HandleFunc("POST /{$}", a.uploadHandler)
+	mux.HandleFunc("POST /internal/gc", a.gcHandler)
 	return mux
 }
 
