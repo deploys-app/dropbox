@@ -34,7 +34,7 @@ func (a *App) runGC(ctx context.Context) error {
 		return nil
 	}, `
 		SELECT fn FROM files
-		WHERE created_at + ttl * interval '1 day' < now()
+		WHERE expires_at < now()
 	`)
 	if err != nil {
 		return err

@@ -44,16 +44,14 @@ func TestRunGC_DeletesExpiredFiles(t *testing.T) {
 	ctx := testDB.Ctx()
 	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
-	// Insert an expired file (created 2 days ago with 1-day TTL).
 	if _, err := pgctx.Exec(ctx, `
-		INSERT INTO files (fn, project_id, size, filename, ttl, created_at)
-		VALUES ('1expired', 'proj-1', 100, 'test.txt', 1, now() - interval '2 days')
+		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at)
+		VALUES ('expired', 'proj-1', 100, 'test.txt', 1, now() - interval '2 days', now() - interval '1 day')
 	`); err != nil {
 		t.Fatal(err)
 	}
 
-	// Put the object in the bucket so deletion can be verified.
-	bw, err := bkt.NewWriter(ctx, "1expired", nil)
+	bw, err := bkt.NewWriter(ctx, "expired", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,15 +78,14 @@ func TestRunGC_KeepsNonExpiredFiles(t *testing.T) {
 	ctx := testDB.Ctx()
 	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
-	// Insert a file created just now with 1-day TTL — not yet expired.
 	if _, err := pgctx.Exec(ctx, `
-		INSERT INTO files (fn, project_id, size, filename, ttl, created_at)
-		VALUES ('1fresh', 'proj-1', 100, 'test.txt', 1, now())
+		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at)
+		VALUES ('fresh', 'proj-1', 100, 'test.txt', 1, now(), now() + interval '1 day')
 	`); err != nil {
 		t.Fatal(err)
 	}
 
-	bw, err := bkt.NewWriter(ctx, "1fresh", nil)
+	bw, err := bkt.NewWriter(ctx, "fresh", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,8 +114,8 @@ func TestRunGC_AlreadyDeletedFromStorage(t *testing.T) {
 
 	// Insert an expired file but don't put it in the bucket (already deleted from storage).
 	if _, err := pgctx.Exec(ctx, `
-		INSERT INTO files (fn, project_id, size, filename, ttl, created_at)
-		VALUES ('1orphan', 'proj-1', 100, 'test.txt', 1, now() - interval '2 days')
+		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at)
+		VALUES ('orphan', 'proj-1', 100, 'test.txt', 1, now() - interval '2 days', now() - interval '1 day')
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -140,13 +137,13 @@ func TestRunGC_MixedExpiry(t *testing.T) {
 	t.Cleanup(func() { testDB.DeleteFiles(t) })
 
 	if _, err := pgctx.Exec(ctx, `
-		INSERT INTO files (fn, project_id, size, filename, ttl, created_at) VALUES
-			('1expired', 'proj-1', 100, 'a.txt', 1, now() - interval '2 days'),
-			('1fresh',   'proj-1', 100, 'b.txt', 1, now())
+		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at) VALUES
+			('expired', 'proj-1', 100, 'a.txt', 1, now() - interval '2 days', now() - interval '1 day'),
+			('fresh',   'proj-1', 100, 'b.txt', 1, now(),                     now() + interval '1 day')
 	`); err != nil {
 		t.Fatal(err)
 	}
-	for _, fn := range []string{"1expired", "1fresh"} {
+	for _, fn := range []string{"expired", "fresh"} {
 		bw, err := bkt.NewWriter(ctx, fn, nil)
 		if err != nil {
 			t.Fatal(err)

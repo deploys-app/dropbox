@@ -95,9 +95,9 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := pgctx.Exec(r.Context(), `
-		INSERT INTO files (fn, project_id, size, filename, ttl)
-		VALUES ($1, $2, $3, $4, $5)
-	`, fn, authResult.Project.ID, r.ContentLength, filename, ttlDays); err != nil {
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, fn, authResult.Project.ID, r.ContentLength, filename, ttlDays, expiresAt); err != nil {
 		slog.Error("insert file metadata", "error", err)
 	}
 
