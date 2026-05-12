@@ -55,7 +55,7 @@ func main() {
 
 	app := &App{
 		Bucket:         bkt,
-		BaseURL:        config.StringDefault("base_url", "https://dropbox-files.deploys.app/"),
+		BaseURL:        config.StringDefault("base_url", "https://dropbox.deploys.app/files/"),
 		InternalSecret: config.String("internal_secret"),
 	}
 

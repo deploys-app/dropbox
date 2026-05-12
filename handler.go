@@ -30,6 +30,7 @@ func (a *App) routes() http.Handler {
 		w.Write([]byte("Deploys.app Dropbox Service"))
 	})
 	mux.HandleFunc("POST /{$}", a.uploadHandler)
+	mux.HandleFunc("GET /files/{fn}", a.fileHandler)
 	mux.HandleFunc("POST /internal/gc", a.gcHandler)
 	return mux
 }
