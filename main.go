@@ -53,6 +53,8 @@ func main() {
 	}
 	defer bkt.Close()
 
+	apiEndpoint = config.StringDefault("api_endpoint", apiEndpoint)
+
 	app := &App{
 		Bucket:         bkt,
 		BaseURL:        config.StringDefault("base_url", "https://dropbox.deploys.app/files/"),

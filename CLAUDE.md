@@ -22,6 +22,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 
 **Environment variables (optional):**
 - `base_url` — download URL prefix (default: `https://dropbox.deploys-files.app/`)
+- `api_endpoint` — deploys.app API base URL (default: `https://api.deploys.app`, override with internal address in production)
 - `PORT` — listen port (default: `8080`)
 - `log_level` — slog level (default: info)
 
