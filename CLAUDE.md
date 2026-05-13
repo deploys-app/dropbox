@@ -37,7 +37,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 
 **Auth (`auth.go`):**
 - No `Authorization` header → alpha mode, project ID hardcoded as `"alpha"` (TODO: remove)
-- With token → POST to `https://api.deploys.app/me.authorized` for `dropbox.upload` permission, checking `authorized` + `billingAccount.active`
+- With token → POST to `{api_endpoint}/me.authorized` for `dropbox.upload` permission, checking `authorized` + `billingAccount.active`
 - Results cached in-process for 30 seconds via `cachestore`
 
 **Key libraries (same pattern as `moonrhythm/registry`):**

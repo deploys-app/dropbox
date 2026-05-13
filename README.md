@@ -19,14 +19,16 @@ $ go test ./...
 
 Docker image is built and pushed automatically on push to `main`. See `.github/workflows/build.yaml`.
 
-**Required environment variables:**
+**Environment variables:**
 
-| Variable      | Description                                              |
-|---------------|----------------------------------------------------------|
-| `db_url`      | PostgreSQL connection string                             |
-| `bucket_name` | GCS bucket name                                          |
-| `base_url`    | Download URL prefix (default: `https://dropbox-files.deploys.app/`) |
-| `PORT`        | Listen port (default: `8080`)                            |
+| Variable       | Required | Description                                                                              |
+|----------------|----------|------------------------------------------------------------------------------------------|
+| `db_url`       | yes      | PostgreSQL connection string                                                             |
+| `bucket_name`  | yes      | GCS bucket name                                                                          |
+| `base_url`     | no       | Download URL prefix (default: `https://dropbox.deploys.app/files/`)                     |
+| `api_endpoint` | no       | deploys.app API base URL (default: `https://api.deploys.app`)                           |
+| `PORT`         | no       | Listen port (default: `8080`)                                                            |
+| `log_level`    | no       | Log level: `debug`, `info`, `warn`, `error` (default: `info`)                           |
 
 ---
 
