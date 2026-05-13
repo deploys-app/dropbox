@@ -53,7 +53,7 @@ func main() {
 	}
 	defer bkt.Close()
 
-	authEndpoint = config.StringDefault("auth_endpoint", authEndpoint)
+	authEndpoint = config.StringDefault("api_endpoint", authEndpoint)
 
 	app := &App{
 		Bucket:         bkt,
