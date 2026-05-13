@@ -27,11 +27,11 @@ func authServer(authorized, billingActive bool) *httptest.Server {
 	}))
 }
 
-func withAuthEndpoint(t *testing.T, url string) {
+func withAPIEndpoint(t *testing.T, url string) {
 	t.Helper()
-	orig := authEndpoint
-	authEndpoint = url
-	t.Cleanup(func() { authEndpoint = orig })
+	orig := apiEndpoint
+	apiEndpoint = url
+	t.Cleanup(func() { apiEndpoint = orig })
 }
 
 func TestCheckAuth_AlphaMode(t *testing.T) {
@@ -54,7 +54,7 @@ func TestCheckAuth_NoProject(t *testing.T) {
 func TestCheckAuth_Authorized(t *testing.T) {
 	srv := authServer(true, true)
 	defer srv.Close()
-	withAuthEndpoint(t, srv.URL)
+	withAPIEndpoint(t, srv.URL)
 
 	result := checkAuth(context.Background(), "Bearer "+t.Name(), "myproject", "")
 	if !result.Authorized {
@@ -71,7 +71,7 @@ func TestCheckAuth_Authorized(t *testing.T) {
 func TestCheckAuth_NotAuthorized(t *testing.T) {
 	srv := authServer(false, true)
 	defer srv.Close()
-	withAuthEndpoint(t, srv.URL)
+	withAPIEndpoint(t, srv.URL)
 
 	result := checkAuth(context.Background(), "Bearer "+t.Name(), "myproject", "")
 	if result.Authorized {
@@ -82,7 +82,7 @@ func TestCheckAuth_NotAuthorized(t *testing.T) {
 func TestCheckAuth_BillingInactive(t *testing.T) {
 	srv := authServer(true, false)
 	defer srv.Close()
-	withAuthEndpoint(t, srv.URL)
+	withAPIEndpoint(t, srv.URL)
 
 	result := checkAuth(context.Background(), "Bearer "+t.Name(), "myproject", "")
 	if result.Authorized {
@@ -93,7 +93,7 @@ func TestCheckAuth_BillingInactive(t *testing.T) {
 func TestCheckAuth_ProjectFromID(t *testing.T) {
 	srv := authServer(true, true)
 	defer srv.Close()
-	withAuthEndpoint(t, srv.URL)
+	withAPIEndpoint(t, srv.URL)
 
 	result := checkAuth(context.Background(), "Bearer "+t.Name(), "", "proj-123")
 	if !result.Authorized {
@@ -102,7 +102,7 @@ func TestCheckAuth_ProjectFromID(t *testing.T) {
 }
 
 func TestCheckAuth_APIDown(t *testing.T) {
-	withAuthEndpoint(t, "http://127.0.0.1:0")
+	withAPIEndpoint(t, "http://127.0.0.1:0")
 
 	result := checkAuth(context.Background(), "Bearer "+t.Name(), "myproject", "")
 	if result.Authorized {
@@ -126,7 +126,7 @@ func TestCheckAuth_CachesResult(t *testing.T) {
 		})
 	}))
 	defer srv.Close()
-	withAuthEndpoint(t, srv.URL)
+	withAPIEndpoint(t, srv.URL)
 
 	token := "Bearer " + t.Name()
 	checkAuth(context.Background(), token, "myproject", "")

@@ -10,7 +10,7 @@ import (
 	"github.com/moonrhythm/cachestore"
 )
 
-var authEndpoint = "https://api.deploys.app"
+var apiEndpoint = "https://api.deploys.app"
 
 const (
 	cacheTTL   = 30 * time.Second
@@ -54,7 +54,7 @@ func checkAuth(ctx context.Context, auth, project, projectID string) AuthResult 
 		Permissions: []string{permission},
 	})
 
-	req, _ := http.NewRequest(http.MethodPost, authEndpoint+"/me.authorized", bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, apiEndpoint+"/me.authorized", bytes.NewReader(body))
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Content-Type", "application/json")
 
