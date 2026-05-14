@@ -28,6 +28,7 @@ func TestFileHandler_Success(t *testing.T) {
 	}
 
 	r := httptest.NewRequest(http.MethodGet, "/files/testfile", nil)
+	r = r.WithContext(testDB.Ctx())
 	r.SetPathValue("fn", "testfile")
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
@@ -53,6 +54,7 @@ func TestFileHandler_NotFound(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
 
 	r := httptest.NewRequest(http.MethodGet, "/files/doesnotexist", nil)
+	r = r.WithContext(testDB.Ctx())
 	r.SetPathValue("fn", "doesnotexist")
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
@@ -76,6 +78,7 @@ func TestFileHandler_RouteIntegration(t *testing.T) {
 	}
 
 	r := httptest.NewRequest(http.MethodGet, "/files/routefile", nil)
+	r = r.WithContext(testDB.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
 

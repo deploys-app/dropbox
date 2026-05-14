@@ -39,7 +39,7 @@ func checkAuth(ctx context.Context, auth, project, projectID string) AuthResult 
 		return AuthResult{}
 	}
 
-	cacheKey := "dropbox|auth|" + auth + "|" + project + "|" + projectID
+	cacheKey := "auth|" + auth + "|" + project + "|" + projectID
 	if v, ok := cachestore.Get[AuthResult](cacheKey); ok {
 		return v
 	}
