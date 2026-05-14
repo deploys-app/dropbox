@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     name: Deploy
     steps:
-    - uses: azure/setup-kubectl@v5
     - uses: google-github-actions/auth@v1
       with:
         credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
