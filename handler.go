@@ -82,7 +82,8 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
 		return
 	}
-	if _, err := io.Copy(bw, r.Body); err != nil {
+	n, err := io.Copy(bw, r.Body)
+	if err != nil {
 		_ = bw.Close()
 		slog.Error("upload file", "error", err)
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
@@ -94,10 +95,13 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	uploadCount.WithLabelValues(authResult.Project.ID).Inc()
+	uploadBytes.WithLabelValues(authResult.Project.ID).Add(float64(n))
+
 	if _, err := pgctx.Exec(r.Context(), `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
-	`, fn, authResult.Project.ID, r.ContentLength, filename, ttlDays, expiresAt); err != nil {
+	`, fn, authResult.Project.ID, n, filename, ttlDays, expiresAt); err != nil {
 		slog.Error("insert file metadata", "error", err)
 	}
 
