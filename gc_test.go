@@ -40,9 +40,10 @@ func TestGCHandler_NoAuthHeader(t *testing.T) {
 
 func TestGCHandler_AuthorizedSuccess(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	app := &App{Bucket: newTestBucket(t), InternalSecret: "topsecret"}
 	r := httptest.NewRequest(http.MethodPost, "/internal/gc", nil)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.Header.Set("Authorization", "Bearer topsecret")
 	w := httptest.NewRecorder()
 	app.gcHandler(w, r)
@@ -54,10 +55,11 @@ func TestGCHandler_AuthorizedSuccess(t *testing.T) {
 
 func TestGCHandler_NoSecretAllowsAnyone(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	// When InternalSecret is empty, the handler does not check Authorization.
 	app := &App{Bucket: newTestBucket(t)}
 	r := httptest.NewRequest(http.MethodPost, "/internal/gc", nil)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.gcHandler(w, r)
 
@@ -68,9 +70,10 @@ func TestGCHandler_NoSecretAllowsAnyone(t *testing.T) {
 
 func TestGCHandler_RouteIntegration(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	app := newTestApp(newTestBucket(t), authorized)
 	r := httptest.NewRequest(http.MethodPost, "/internal/gc", nil)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
 
@@ -81,20 +84,19 @@ func TestGCHandler_RouteIntegration(t *testing.T) {
 
 func TestRunGC_DeletesExpiredFiles(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := &App{Bucket: bkt}
-	ctx := testDB.Ctx()
-	projectID := "proj-" + t.Name()
-	fn := "exp-" + t.Name()
+	ctx := db.Ctx()
 
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at)
-		VALUES ($1, $2, 100, 'test.txt', 1, now() - interval '2 days', now() - interval '1 day')
-	`, fn, projectID); err != nil {
+		VALUES ('expired', 'proj-1', 100, 'test.txt', 1, now() - interval '2 days', now() - interval '1 day')
+	`); err != nil {
 		t.Fatal(err)
 	}
 
-	bw, err := bkt.NewWriter(ctx, fn, nil)
+	bw, err := bkt.NewWriter(ctx, "expired", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +109,8 @@ func TestRunGC_DeletesExpiredFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if n := testDB.CountFilesByProject(t, projectID); n != 0 {
-		t.Errorf("db files for %q = %d, want 0 after GC", projectID, n)
+	if n := db.CountFiles(t); n != 0 {
+		t.Errorf("db files = %d, want 0 after GC", n)
 	}
 	if n := countObjects(t, bkt); n != 0 {
 		t.Errorf("bucket objects = %d, want 0 after GC", n)
@@ -117,20 +119,19 @@ func TestRunGC_DeletesExpiredFiles(t *testing.T) {
 
 func TestRunGC_KeepsNonExpiredFiles(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := &App{Bucket: bkt}
-	ctx := testDB.Ctx()
-	projectID := "proj-" + t.Name()
-	fn := "fresh-" + t.Name()
+	ctx := db.Ctx()
 
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at)
-		VALUES ($1, $2, 100, 'test.txt', 1, now(), now() + interval '1 day')
-	`, fn, projectID); err != nil {
+		VALUES ('fresh', 'proj-1', 100, 'test.txt', 1, now(), now() + interval '1 day')
+	`); err != nil {
 		t.Fatal(err)
 	}
 
-	bw, err := bkt.NewWriter(ctx, fn, nil)
+	bw, err := bkt.NewWriter(ctx, "fresh", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +144,8 @@ func TestRunGC_KeepsNonExpiredFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if n := testDB.CountFilesByProject(t, projectID); n != 1 {
-		t.Errorf("db files for %q = %d, want 1 (non-expired file kept)", projectID, n)
+	if n := db.CountFiles(t); n != 1 {
+		t.Errorf("db files = %d, want 1 (non-expired file kept)", n)
 	}
 	if n := countObjects(t, bkt); n != 1 {
 		t.Errorf("bucket objects = %d, want 1 (non-expired object kept)", n)
@@ -153,17 +154,16 @@ func TestRunGC_KeepsNonExpiredFiles(t *testing.T) {
 
 func TestRunGC_AlreadyDeletedFromStorage(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := &App{Bucket: bkt}
-	ctx := testDB.Ctx()
-	projectID := "proj-" + t.Name()
-	fn := "orphan-" + t.Name()
+	ctx := db.Ctx()
 
 	// Insert an expired file but don't put it in the bucket (already deleted from storage).
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at)
-		VALUES ($1, $2, 100, 'test.txt', 1, now() - interval '2 days', now() - interval '1 day')
-	`, fn, projectID); err != nil {
+		VALUES ('orphan', 'proj-1', 100, 'test.txt', 1, now() - interval '2 days', now() - interval '1 day')
+	`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -172,28 +172,26 @@ func TestRunGC_AlreadyDeletedFromStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if n := testDB.CountFilesByProject(t, projectID); n != 0 {
-		t.Errorf("db files for %q = %d, want 0 (orphan DB row cleaned up)", projectID, n)
+	if n := db.CountFiles(t); n != 0 {
+		t.Errorf("db files = %d, want 0 (orphan DB row cleaned up)", n)
 	}
 }
 
 func TestRunGC_MixedExpiry(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := &App{Bucket: bkt}
-	ctx := testDB.Ctx()
-	projectID := "proj-" + t.Name()
-	expFn := "exp-" + t.Name()
-	freshFn := "fresh-" + t.Name()
+	ctx := db.Ctx()
 
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, created_at, expires_at) VALUES
-			($1, $3, 100, 'a.txt', 1, now() - interval '2 days', now() - interval '1 day'),
-			($2, $3, 100, 'b.txt', 1, now(),                     now() + interval '1 day')
-	`, expFn, freshFn, projectID); err != nil {
+			('expired', 'proj-1', 100, 'a.txt', 1, now() - interval '2 days', now() - interval '1 day'),
+			('fresh',   'proj-1', 100, 'b.txt', 1, now(),                     now() + interval '1 day')
+	`); err != nil {
 		t.Fatal(err)
 	}
-	for _, fn := range []string{expFn, freshFn} {
+	for _, fn := range []string{"expired", "fresh"} {
 		bw, err := bkt.NewWriter(ctx, fn, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -208,8 +206,8 @@ func TestRunGC_MixedExpiry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if n := testDB.CountFilesByProject(t, projectID); n != 1 {
-		t.Errorf("db files for %q = %d, want 1 (only non-expired kept)", projectID, n)
+	if n := db.CountFiles(t); n != 1 {
+		t.Errorf("db files = %d, want 1 (only non-expired kept)", n)
 	}
 	if n := countObjects(t, bkt); n != 1 {
 		t.Errorf("bucket objects = %d, want 1 (only non-expired kept)", n)
@@ -218,11 +216,11 @@ func TestRunGC_MixedExpiry(t *testing.T) {
 
 func TestRunGC_NoExpiredFiles(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := &App{Bucket: bkt}
-	ctx := testDB.Ctx()
 
-	if err := app.runGC(ctx); err != nil {
+	if err := app.runGC(db.Ctx()); err != nil {
 		t.Fatal(err)
 	}
 }

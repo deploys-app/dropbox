@@ -12,11 +12,11 @@ import (
 
 func TestFileHandler_Success(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	fn := "fhs-" + t.Name()
 
-	bw, err := bkt.NewWriter(t.Context(), fn, &blob.WriterOptions{
+	bw, err := bkt.NewWriter(t.Context(), "testfile", &blob.WriterOptions{
 		CacheControl:       "public, max-age=86400",
 		ContentDisposition: `attachment; filename="hello.txt"`,
 	})
@@ -30,9 +30,9 @@ func TestFileHandler_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
-	r = r.WithContext(testDB.Ctx())
-	r.SetPathValue("fn", fn)
+	r := httptest.NewRequest(http.MethodGet, "/files/testfile", nil)
+	r = r.WithContext(db.Ctx())
+	r.SetPathValue("fn", "testfile")
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -55,12 +55,12 @@ func TestFileHandler_Success(t *testing.T) {
 
 func TestFileHandler_NotFound(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	app := newTestApp(newTestBucket(t), authorized)
-	fn := "fhn-" + t.Name()
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
-	r = r.WithContext(testDB.Ctx())
-	r.SetPathValue("fn", fn)
+	r := httptest.NewRequest(http.MethodGet, "/files/doesnotexist", nil)
+	r = r.WithContext(db.Ctx())
+	r.SetPathValue("fn", "doesnotexist")
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -71,11 +71,11 @@ func TestFileHandler_NotFound(t *testing.T) {
 
 func TestFileHandler_RouteIntegration(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	fn := "fhr-" + t.Name()
 
-	bw, err := bkt.NewWriter(t.Context(), fn, nil)
+	bw, err := bkt.NewWriter(t.Context(), "routefile", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,8 +84,8 @@ func TestFileHandler_RouteIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
-	r = r.WithContext(testDB.Ctx())
+	r := httptest.NewRequest(http.MethodGet, "/files/routefile", nil)
+	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
 
@@ -96,11 +96,11 @@ func TestFileHandler_RouteIntegration(t *testing.T) {
 
 func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	fn := "fhne-" + t.Name()
 
-	bw, err := bkt.NewWriter(t.Context(), fn, nil)
+	bw, err := bkt.NewWriter(t.Context(), "plain", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,9 +109,9 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
-	r = r.WithContext(testDB.Ctx())
-	r.SetPathValue("fn", fn)
+	r := httptest.NewRequest(http.MethodGet, "/files/plain", nil)
+	r = r.WithContext(db.Ctx())
+	r.SetPathValue("fn", "plain")
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -128,32 +128,30 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 
 func TestLookupFileProject_FromDB(t *testing.T) {
 	t.Parallel()
-	ctx := testDB.Ctx()
-	fn := "lfp-" + t.Name()
-	projectID := "proj-" + t.Name()
+	db := newTestDB(t)
+	ctx := db.Ctx()
 
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ($1, $2, 1, 'x', 1, now() + interval '1 day')
-	`, fn, projectID); err != nil {
+		VALUES ('lookupfile', 'proj-xyz', 1, 'x', 1, now() + interval '1 day')
+	`); err != nil {
 		t.Fatal(err)
 	}
 
-	if got := lookupFileProject(ctx, fn); got != projectID {
-		t.Errorf("lookupFileProject = %q, want %q", got, projectID)
+	if got := lookupFileProject(ctx, "lookupfile"); got != "proj-xyz" {
+		t.Errorf("lookupFileProject = %q, want proj-xyz", got)
 	}
 	// Second call exercises the cache hit path.
-	if got := lookupFileProject(ctx, fn); got != projectID {
-		t.Errorf("lookupFileProject (cached) = %q, want %q", got, projectID)
+	if got := lookupFileProject(ctx, "lookupfile"); got != "proj-xyz" {
+		t.Errorf("lookupFileProject (cached) = %q, want proj-xyz", got)
 	}
 }
 
 func TestLookupFileProject_NotFound(t *testing.T) {
 	t.Parallel()
-	ctx := testDB.Ctx()
-	fn := "lfp-missing-" + t.Name()
+	db := newTestDB(t)
 
-	if got := lookupFileProject(ctx, fn); got != "" {
+	if got := lookupFileProject(db.Ctx(), "missingfile"); got != "" {
 		t.Errorf("lookupFileProject = %q, want empty for missing fn", got)
 	}
 }

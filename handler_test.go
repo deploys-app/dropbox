@@ -42,14 +42,6 @@ func authorized(_ context.Context, _, _, _ string) AuthResult {
 	return AuthResult{Authorized: true, Project: Project{ID: "proj-1", Project: "test"}}
 }
 
-// authorizedWith returns an auth function that always reports the supplied projectID.
-// Used by parallel tests so each test scopes its DB rows to a unique project.
-func authorizedWith(projectID string) func(context.Context, string, string, string) AuthResult {
-	return func(_ context.Context, _, _, _ string) AuthResult {
-		return AuthResult{Authorized: true, Project: Project{ID: projectID, Project: "test"}}
-	}
-}
-
 func unauthorized(_ context.Context, _, _, _ string) AuthResult {
 	return AuthResult{}
 }
@@ -156,13 +148,13 @@ func TestUpload_NilBody(t *testing.T) {
 
 func TestUpload_Success(t *testing.T) {
 	t.Parallel()
-	projectID := "proj-" + t.Name()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
-	app := newTestApp(bkt, authorizedWith(projectID))
+	app := newTestApp(bkt, authorized)
 
 	body := strings.NewReader("hello world")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = int64(len("hello world"))
 	w := httptest.NewRecorder()
 	app.uploadHandler(w, r)
@@ -193,8 +185,8 @@ func TestUpload_Success(t *testing.T) {
 	if n := countObjects(t, bkt); n != 1 {
 		t.Errorf("bucket objects = %d, want 1", n)
 	}
-	if n := testDB.CountFilesByProject(t, projectID); n != 1 {
-		t.Errorf("db files for project %q = %d, want 1", projectID, n)
+	if n := db.CountFiles(t); n != 1 {
+		t.Errorf("db files = %d, want 1", n)
 	}
 }
 
@@ -216,8 +208,8 @@ func TestUpload_TTL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("ttl="+tc.ttl, func(t *testing.T) {
 			t.Parallel()
-			projectID := "proj-" + t.Name()
-			app := newTestApp(newTestBucket(t), authorizedWith(projectID))
+			db := newTestDB(t)
+			app := newTestApp(newTestBucket(t), authorized)
 
 			url := "/"
 			if tc.ttl != "" {
@@ -225,7 +217,7 @@ func TestUpload_TTL(t *testing.T) {
 			}
 			body := strings.NewReader("data")
 			r := httptest.NewRequest(http.MethodPost, url, body)
-			r = r.WithContext(testDB.Ctx())
+			r = r.WithContext(db.Ctx())
 			r.ContentLength = 4
 			w := httptest.NewRecorder()
 			app.uploadHandler(w, r)
@@ -250,11 +242,12 @@ func TestUpload_TTL(t *testing.T) {
 
 func TestUpload_TTLFromHeader(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(newTestBucket(t), authorizedWith("proj-"+t.Name()))
+	db := newTestDB(t)
+	app := newTestApp(newTestBucket(t), authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-ttl", "5")
 	w := httptest.NewRecorder()
@@ -270,11 +263,12 @@ func TestUpload_TTLFromHeader(t *testing.T) {
 
 func TestUpload_QueryParamOverridesHeader(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(newTestBucket(t), authorizedWith("proj-"+t.Name()))
+	db := newTestDB(t)
+	app := newTestApp(newTestBucket(t), authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?ttl=6", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-ttl", "2")
 	w := httptest.NewRecorder()
@@ -290,12 +284,13 @@ func TestUpload_QueryParamOverridesHeader(t *testing.T) {
 
 func TestUpload_FilenameFromQuery(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
-	app := newTestApp(bkt, authorizedWith("proj-"+t.Name()))
+	app := newTestApp(bkt, authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?filename=report.pdf", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	w := httptest.NewRecorder()
 	app.uploadHandler(w, r)
@@ -318,12 +313,13 @@ func TestUpload_FilenameFromQuery(t *testing.T) {
 
 func TestUpload_FilenameFromHeader(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
-	app := newTestApp(bkt, authorizedWith("proj-"+t.Name()))
+	app := newTestApp(bkt, authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-filename", "report.pdf")
 	w := httptest.NewRecorder()
@@ -347,12 +343,13 @@ func TestUpload_FilenameFromHeader(t *testing.T) {
 
 func TestUpload_FilenameWithQuotesEscaped(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
-	app := newTestApp(bkt, authorizedWith("proj-"+t.Name()))
+	app := newTestApp(bkt, authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, `/?filename=say+"hi".txt`, body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	w := httptest.NewRecorder()
 	app.uploadHandler(w, r)
@@ -375,12 +372,13 @@ func TestUpload_FilenameWithQuotesEscaped(t *testing.T) {
 
 func TestUpload_NoFilenameNoContentDisposition(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 	bkt := newTestBucket(t)
-	app := newTestApp(bkt, authorizedWith("proj-"+t.Name()))
+	app := newTestApp(bkt, authorized)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	w := httptest.NewRecorder()
 	app.uploadHandler(w, r)
@@ -423,18 +421,18 @@ func TestUpload_Unauthorized(t *testing.T) {
 
 func TestUpload_ProjectIDParamRouting(t *testing.T) {
 	t.Parallel()
+	db := newTestDB(t)
 
-	// Track what the auth function was called with.
 	var gotProject, gotProjectID string
 	authFn := func(_ context.Context, _, project, projectID string) AuthResult {
 		gotProject, gotProjectID = project, projectID
-		return AuthResult{Authorized: true, Project: Project{ID: "proj-" + t.Name()}}
+		return AuthResult{Authorized: true, Project: Project{ID: "proj-1"}}
 	}
 	app := newTestApp(newTestBucket(t), authFn)
 
 	body := strings.NewReader("data")
 	r := httptest.NewRequest(http.MethodPost, "/?projectId=pid-from-query", body)
-	r = r.WithContext(testDB.Ctx())
+	r = r.WithContext(db.Ctx())
 	r.ContentLength = 4
 	r.Header.Set("param-project", "p-from-header")
 	w := httptest.NewRecorder()

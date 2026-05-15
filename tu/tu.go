@@ -4,7 +4,6 @@ package tu
 import (
 	"context"
 	"database/sql"
-	"sync"
 
 	"github.com/acoshift/pgsql/pgctx"
 	"github.com/cockroachdb/cockroach-go/v2/testserver"
@@ -65,14 +64,6 @@ func Setup() *Context {
 	return c
 }
 
-// DeleteFiles removes all rows from the files table. Call from t.Cleanup to isolate tests.
-func (c *Context) DeleteFiles(t interface{ Helper(); Fatal(...any) }) {
-	t.Helper()
-	if _, err := c.DB.ExecContext(context.Background(), `DELETE FROM files`); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // CountFiles returns the number of rows in the files table.
 func (c *Context) CountFiles(t interface{ Helper(); Fatal(...any) }) int {
 	t.Helper()
@@ -82,27 +73,3 @@ func (c *Context) CountFiles(t interface{ Helper(); Fatal(...any) }) int {
 	}
 	return n
 }
-
-// CountFilesByProject returns the number of rows in the files table for a given project_id.
-// Use this in parallel tests so the count is scoped to data the test itself inserted.
-func (c *Context) CountFilesByProject(t interface{ Helper(); Fatal(...any) }, projectID string) int {
-	t.Helper()
-	var n int
-	if err := c.DB.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM files WHERE project_id = $1`, projectID).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
-}
-
-// Default returns a lazily-initialised shared test Context. Safe for concurrent callers.
-func Default() *Context {
-	defaultOnce.Do(func() {
-		defaultCtx = Setup()
-	})
-	return defaultCtx
-}
-
-var (
-	defaultOnce sync.Once
-	defaultCtx  *Context
-)
