@@ -64,14 +64,6 @@ func Setup() *Context {
 	return c
 }
 
-// DeleteFiles removes all rows from the files table. Call from t.Cleanup to isolate tests.
-func (c *Context) DeleteFiles(t interface{ Helper(); Fatal(...any) }) {
-	t.Helper()
-	if _, err := c.DB.ExecContext(context.Background(), `DELETE FROM files`); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // CountFiles returns the number of rows in the files table.
 func (c *Context) CountFiles(t interface{ Helper(); Fatal(...any) }) int {
 	t.Helper()
