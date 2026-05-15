@@ -10,6 +10,7 @@ jobs:
     runs-on: self-hosted
     name: Deploy
     steps:
+    - uses: azure/setup-kubectl@v4
     - uses: google-github-actions/auth@v1
       with:
         credentials_json: ${{ secrets.GOOGLE_CREDENTIALS }}
