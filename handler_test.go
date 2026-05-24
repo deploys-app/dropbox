@@ -225,6 +225,17 @@ func TestUpload_Success(t *testing.T) {
 	if n := db.CountFiles(t); n != 1 {
 		t.Errorf("db files = %d, want 1", n)
 	}
+
+	// The signed token in the URL must be persisted verbatim so the api's
+	// dropbox.List (which has no SignKey) can rebuild the same download URL.
+	wantToken := strings.TrimPrefix(resp.Result.DownloadURL, "https://example.com/")
+	var gotToken string
+	if err := db.DB.QueryRowContext(context.Background(), `SELECT token FROM files`).Scan(&gotToken); err != nil {
+		t.Fatal(err)
+	}
+	if gotToken != wantToken {
+		t.Errorf("stored token = %q, want %q (matching downloadUrl)", gotToken, wantToken)
+	}
 }
 
 func TestUpload_TTL(t *testing.T) {

@@ -74,6 +74,9 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlDays) * 24 * time.Hour)
 	fn := generateFilename()
+	// The signed token is the public URL component. Persist it so the api's
+	// dropbox.List can rebuild download URLs without holding SignKey.
+	token := makeToken(a.SignKey, fn)
 
 	opts := &blob.WriterOptions{
 		CacheControl: "public, max-age=86400",
@@ -105,9 +108,9 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	uploadBytes.WithLabelValues(authResult.Project.ID).Add(float64(n))
 
 	if _, err := pgctx.Exec(r.Context(), `
-		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, fn, authResult.Project.ID, n, filename, ttlDays, expiresAt); err != nil {
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at, token)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`, fn, authResult.Project.ID, n, filename, ttlDays, expiresAt, token); err != nil {
 		slog.Error("insert file metadata", "error", err)
 	}
 
@@ -115,7 +118,7 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"ok": true,
 		"result": map[string]any{
-			"downloadUrl": a.BaseURL + makeToken(a.SignKey, fn),
+			"downloadUrl": a.BaseURL + token,
 			"expiresAt":   expiresAt.Format(time.RFC3339),
 		},
 	})
