@@ -579,9 +579,9 @@ func TestFileHandler_InvalidTokenRejected(t *testing.T) {
 
 	goodFn := validTestFn("good")
 	goodToken := signedToken(goodFn)
-	tamperedSig := goodToken[:tokenLen-1] + "0"
+	tamperedSig := goodToken[:len(goodToken)-1] + "0"
 	if tamperedSig == goodToken {
-		tamperedSig = goodToken[:tokenLen-1] + "1"
+		tamperedSig = goodToken[:len(goodToken)-1] + "1"
 	}
 	forgedDiffKey := makeToken([]byte("not-the-real-key"), goodFn)
 
@@ -589,9 +589,9 @@ func TestFileHandler_InvalidTokenRejected(t *testing.T) {
 		"empty":             "",
 		"short":             "short",
 		"path-traversal":    "../../etc/passwd",
-		"one-char-short":    strings.Repeat("a", tokenLen-1),
-		"one-char-long":     strings.Repeat("a", tokenLen+1),
-		"right-len-bad-sig": strings.Repeat("a", tokenLen),
+		"no-separator":      strings.Repeat("a", fnLen+sigLen),
+		"empty-fn":          tokenSep + signFilename(testSignKey, ""),
+		"empty-sig":         goodFn + tokenSep,
 		"tampered-sig":      tamperedSig,
 		"forged-other-key":  forgedDiffKey,
 	}

@@ -81,7 +81,7 @@ File data binary
 }
 ```
 
-`<token>` is a 44-char string: a 24-char random alphanumeric filename concatenated with a 20-char HMAC-SHA256 signature (keyed by `sign_key`). Tampered or made-up tokens are rejected before any DB or storage lookup.
+`<token>` is `{fn}-{sig}` (currently 45 chars): a 24-char random alphanumeric filename, a `-` separator, and a 20-char HMAC-SHA256 signature (keyed by `sign_key`). Tampered or made-up tokens are rejected before any DB or storage lookup. The separator means future changes to filename length stay backward-compatible.
 
 ##### Unauthorized
 

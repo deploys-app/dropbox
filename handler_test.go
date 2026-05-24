@@ -552,12 +552,35 @@ func TestParseToken_RoundTripsGeneratedToken(t *testing.T) {
 	for i := 0; i < 16; i++ {
 		fn := generateFilename()
 		token := makeToken(testSignKey, fn)
-		if len(token) != tokenLen {
-			t.Fatalf("token length = %d, want %d", len(token), tokenLen)
+		if want := fnLen + 1 + sigLen; len(token) != want {
+			t.Fatalf("token length = %d, want %d", len(token), want)
+		}
+		if !strings.Contains(token, tokenSep) {
+			t.Fatalf("token %q missing separator %q", token, tokenSep)
 		}
 		got, ok := parseToken(testSignKey, token)
 		if !ok || got != fn {
 			t.Errorf("parseToken(%q) = (%q, %v), want (%q, true)", token, got, ok, fn)
+		}
+	}
+}
+
+func TestParseToken_AcceptsDifferentFnLengths(t *testing.T) {
+	// The whole point of the separator: parseToken must work for fns of
+	// any length, as long as the sig was produced by signFilename. This
+	// guards future changes to fnLen without breaking outstanding URLs.
+	t.Parallel()
+	for _, fn := range []string{
+		"a",
+		"abc",
+		validTestFn("short"),
+		validTestFn("default"),
+		strings.Repeat("z", 64), // hypothetically larger fn
+	} {
+		token := makeToken(testSignKey, fn)
+		got, ok := parseToken(testSignKey, token)
+		if !ok || got != fn {
+			t.Errorf("parseToken round-trip failed for fn=%q: got=(%q, %v)", fn, got, ok)
 		}
 	}
 }
@@ -572,16 +595,17 @@ func TestParseToken_RejectsForgeries(t *testing.T) {
 		t.Error("parseToken accepted token signed under a different key")
 	}
 
-	// Tamper with the sig portion.
-	tampered := good[:tokenLen-1] + "0"
+	// Tamper with the sig portion (last char).
+	tampered := good[:len(good)-1] + "0"
 	if tampered == good {
-		tampered = good[:tokenLen-1] + "1"
+		tampered = good[:len(good)-1] + "1"
 	}
 	if _, ok := parseToken(testSignKey, tampered); ok {
 		t.Errorf("parseToken accepted tampered sig: %q", tampered)
 	}
 
-	// Tamper with the fn portion (now the sig no longer matches).
+	// Tamper with the fn portion (the sig no longer matches what we'd
+	// compute over the rewritten fn).
 	swapFn := "b" + good[1:]
 	if swapFn == good {
 		swapFn = "c" + good[1:]
@@ -590,13 +614,15 @@ func TestParseToken_RejectsForgeries(t *testing.T) {
 		t.Errorf("parseToken accepted token with rewritten fn: %q", swapFn)
 	}
 
-	// Wrong length.
+	// Structural failures: missing separator, empty fn/sig, etc.
 	for _, bad := range []string{
 		"",
 		"short",
-		good + "x",
-		good[:tokenLen-1],
-		strings.Repeat("a", tokenLen),
+		"no-separator-but-also-clearly-not-a-real-token",
+		tokenSep + signFilename(testSignKey, ""), // empty fn
+		fn + tokenSep,                            // empty sig
+		fn,                                       // sig missing entirely
+		strings.Repeat("a", fnLen+1+sigLen),      // right total length, no separator at all
 	} {
 		if _, ok := parseToken(testSignKey, bad); ok {
 			t.Errorf("parseToken accepted bad token %q", bad)

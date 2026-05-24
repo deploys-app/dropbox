@@ -29,7 +29,8 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 - `log_level` — slog level (default: info)
 
 **Download token scheme (`handler.go`):**
-- The URL path component is a 44-char `token` = `fn` (24 chars random `[0-9A-Za-z]`, ~143 bits of entropy) concatenated with `sig` (20 hex chars of HMAC-SHA256 truncated to 80 bits, keyed by `sign_key`).
+- The URL path component is a `token` = `fn` + `"-"` + `sig`, currently 45 chars total. `fn` is 24 random chars `[0-9A-Za-z]` (~143 bits of entropy); `sig` is 20 hex chars of HMAC-SHA256 truncated to 80 bits, keyed by `sign_key`.
+- The `-` separator lets us change `fnLen` later without invalidating tokens that are already in circulation — `parseToken` splits structurally on the separator, not by fixed position. Since `fn` is alphanumeric and `sig` is hex, neither side can contain a `-`.
 - `parseToken(SignKey, token)` runs first in both `fileHandler` and `cdnFileHandler` and 404s on any mismatch — DDoS attempts that don't know `sign_key` never reach the DB or GCS.
 - `fn` is what we store in the bucket and the `files.fn` column. The full token only appears in URLs.
 
@@ -40,7 +41,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 4. Generate a 24-char alphanumeric `fn` (`generateFilename`, rejection-sampled to stay unbiased)
 5. Stream body to GCS with cache-control and optional content-disposition, keyed by `fn`
 6. Insert metadata into PostgreSQL via `pgctx.Exec`
-7. Return JSON: `{"ok": true, "result": {"downloadUrl": "{base_url}{fn}{sig}", "expiresAt": "..."}}`
+7. Return JSON: `{"ok": true, "result": {"downloadUrl": "{base_url}{fn}-{sig}", "expiresAt": "..."}}`
 
 **Auth (`auth.go`):**
 - No `Authorization` header → alpha mode, project ID hardcoded as `"alpha"` (TODO: remove)

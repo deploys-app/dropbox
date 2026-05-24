@@ -128,16 +128,18 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 // [0-9A-Za-z] with rejection sampling). No special chars, so URLs are
 // clean and we don't need URL-safe-base64 tricks.
 //
-// `token` is what appears in the public URL: `fn` concatenated with a
-// 20-char lowercase-hex HMAC-SHA256 tag (80-bit) keyed by App.SignKey.
-// The handlers check the tag before any DB or GCS work, so a flood of
-// random `/files/{token}` requests by an attacker who doesn't know the
-// key gets 404'd in CPU. Length is fixed (fnLen + sigLen = 44) so we
-// don't need a separator.
+// `token` is what appears in the public URL: `fn` + "-" + 20-char
+// lowercase-hex HMAC-SHA256 tag (80-bit) keyed by App.SignKey. The
+// handlers check the tag before any DB or GCS work, so a flood of
+// random `/files/{token}` requests by an attacker who doesn't know
+// the key gets 404'd in CPU. The "-" separator means we can change
+// `fnLen` later without invalidating old tokens — parseToken splits
+// on it instead of relying on a fixed cut point. fn is alphanumeric
+// and sig is hex, so neither side can contain a "-".
 const (
 	fnLen    = 24
 	sigLen   = 20 // 80 bits of HMAC, hex-encoded
-	tokenLen = fnLen + sigLen
+	tokenSep = "-"
 )
 
 const fnAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
@@ -177,22 +179,26 @@ func signFilename(key []byte, fn string) string {
 	return hex.EncodeToString(sum[:sigLen/2])
 }
 
-// makeToken builds the public URL token (fn + sig) for fn.
+// makeToken builds the public URL token for fn: `fn + "-" + sig`.
 func makeToken(key []byte, fn string) string {
-	return fn + signFilename(key, fn)
+	return fn + tokenSep + signFilename(key, fn)
 }
 
-// parseToken splits a public URL token into (fn, sig), verifies the
-// HMAC in constant time, and returns the fn on success. On any
-// failure — wrong length, bad sig, anything — it returns (_, false)
-// and the handler 404s without touching the DB or GCS. This is the
-// primary DDoS shield against random `/files/{garbage}` floods.
+// parseToken splits a public URL token on tokenSep, verifies the HMAC
+// in constant time, and returns the fn on success. On any failure —
+// missing separator, empty side, bad sig, anything — it returns
+// (_, false) and the handler 404s without touching the DB or GCS.
+// This is the primary DDoS shield against random `/files/{garbage}`
+// floods. The split is structural (on the separator) rather than
+// positional, so changing fnLen later won't invalidate old tokens
+// still in circulation.
 func parseToken(key []byte, token string) (string, bool) {
-	if len(token) != tokenLen {
+	idx := strings.IndexByte(token, tokenSep[0])
+	if idx <= 0 || idx == len(token)-1 {
 		return "", false
 	}
-	fn := token[:fnLen]
-	sig := token[fnLen:]
+	fn := token[:idx]
+	sig := token[idx+1:]
 	expected := signFilename(key, fn)
 	if !hmac.Equal([]byte(sig), []byte(expected)) {
 		return "", false
