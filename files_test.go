@@ -181,8 +181,8 @@ func TestFileHandler_CDNRedirect(t *testing.T) {
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d, want 307", w.Code)
 	}
-	if loc := w.Header().Get("Location"); loc != "https://cdn.example.com/files/cdnfile" {
-		t.Errorf("Location = %q, want https://cdn.example.com/files/cdnfile", loc)
+	if loc := w.Header().Get("Location"); loc != "https://cdn.example.com/cdnfile" {
+		t.Errorf("Location = %q, want https://cdn.example.com/cdnfile", loc)
 	}
 	if got := w.Body.Len(); got > 100 {
 		// the default redirect body is small ("<a href=...>"); we shouldn't

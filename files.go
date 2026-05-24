@@ -41,7 +41,7 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 	if a.CDNDomain != "" && !isInternalClient(r) {
 		downloadCount.WithLabelValues(projectID).Inc()
 		egressBytes.WithLabelValues(projectID).Add(float64(attrs.Size))
-		http.Redirect(w, r, "https://"+a.CDNDomain+"/files/"+fn, http.StatusTemporaryRedirect)
+		http.Redirect(w, r, "https://"+a.CDNDomain+"/"+fn, http.StatusTemporaryRedirect)
 		return
 	}
 
