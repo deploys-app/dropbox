@@ -32,7 +32,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 - The URL path component is a `token` = `fn` + `"-"` + `sig`, currently 45 chars total. `fn` is 24 random chars `[0-9A-Za-z]` (~143 bits of entropy); `sig` is 20 hex chars of HMAC-SHA256 truncated to 80 bits, keyed by `sign_key`.
 - The `-` separator lets us change `fnLen` later without invalidating tokens that are already in circulation — `parseToken` splits structurally on the separator, not by fixed position. Since `fn` is alphanumeric and `sig` is hex, neither side can contain a `-`.
 - `parseToken(SignKey, token)` runs first in both `fileHandler` and `cdnFileHandler` and 404s on any mismatch — DDoS attempts that don't know `sign_key` never reach the DB or GCS.
-- `fn` is what we store in the bucket and the `files.fn` column. The full token only appears in URLs.
+- `fn` is what we store in the bucket and the `files.fn` column. The full token is also persisted in `files.token` so the api's `dropbox.List` can rebuild download URLs without holding `sign_key`; it's otherwise only meaningful in URLs.
 
 **Request flow (`handler.go`):**
 1. Parse `Authorization` header + `project`/`projectId` from query params or `param-*` headers (query params take precedence)
