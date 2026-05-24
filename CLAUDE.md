@@ -21,8 +21,9 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 - `bucket_name` — GCS bucket name
 
 **Environment variables (optional):**
-- `base_url` — download URL prefix (default: `https://dropbox.deploys-files.app/`)
+- `base_url` — download URL prefix (default: `https://dropbox.deploys.app/files/`)
 - `api_endpoint` — deploys.app API base URL (default: `https://api.deploys.app`, override with internal address in production)
+- `cdn_base_url` — full URL prefix (including scheme and trailing slash, e.g. `https://cdn.example.com/`). When set, `GET /files/{fn}` records the download metric (counted against `attrs.Size`) and 307-redirects to `{cdn_base_url}{fn}`. The CDN edge is expected to fetch its origin at `https://dropbox.deploys.app/_cdn/{fn}`, which streams the file unauthenticated and without metrics. In-cluster callers (private/loopback/link-local `X-Real-Ip`) bypass the redirect and stream directly. Unset = original streaming behavior.
 - `PORT` — listen port (default: `8080`)
 - `log_level` — slog level (default: info)
 
@@ -49,4 +50,4 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 ## Notes
 
 - `schema.sql` targets PostgreSQL; `project_id` is `text` (the API returns string IDs)
-- The download domain (`base_url`) differs from the upload domain — files are served from a separate host
+- `base_url` is the public download prefix (`https://dropbox.deploys.app/files/`); it shares the service host and resolves to the `GET /files/{fn}` route, which streams directly or 307s to the CDN (see `cdn_base_url`)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 type App struct {
 	Bucket         *blob.Bucket
 	BaseURL        string
+	CDNBaseURL     string
 	InternalSecret string
 	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
 }
@@ -31,6 +33,7 @@ func (a *App) routes() http.Handler {
 	})
 	mux.HandleFunc("POST /{$}", a.uploadHandler)
 	mux.HandleFunc("GET /files/{fn}", a.fileHandler)
+	mux.HandleFunc("GET /_cdn/{fn}", a.cdnFileHandler)
 	mux.HandleFunc("POST /internal/gc", a.gcHandler)
 	return mux
 }
@@ -132,6 +135,17 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// isInternalClient returns true when the request originates from a
+// private/loopback/link-local IP per the X-Real-Ip header. Internal callers
+// (in-cluster fetches) bypass the CDN redirect and read files directly.
+func isInternalClient(r *http.Request) bool {
+	ip := net.ParseIP(r.Header.Get("X-Real-Ip"))
+	if ip == nil {
+		return false
+	}
+	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()
 }
 
 func jsonFail(w http.ResponseWriter, msg string, status int) {

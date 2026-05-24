@@ -25,7 +25,7 @@ Docker image is built and pushed automatically on push to `main`. See `.github/w
 |---------------|----------------------------------------------------------|
 | `db_url`      | PostgreSQL connection string                             |
 | `bucket_name` | GCS bucket name                                          |
-| `base_url`    | Download URL prefix (default: `https://dropbox-files.deploys.app/`) |
+| `base_url`    | Download URL prefix (default: `https://dropbox.deploys.app/files/`) |
 | `PORT`        | Listen port (default: `8080`)                            |
 
 ---
@@ -74,7 +74,7 @@ File data binary
 {
 	"ok": true,
 	"result": {
-		"downloadUrl": "https://dropbox-files.deploys.app/1<filename>",
+		"downloadUrl": "https://dropbox.deploys.app/files/<filename>",
 		"expiresAt": "2020-01-01T01:01:01Z"
 	}
 }
