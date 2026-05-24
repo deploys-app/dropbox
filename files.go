@@ -8,10 +8,13 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/acoshift/pgsql/pgctx"
 	"github.com/moonrhythm/cachestore"
+	"github.com/moonrhythm/sf"
 	"gocloud.dev/blob"
 	"gocloud.dev/gcerrors"
 )
@@ -183,35 +186,75 @@ func (a *App) streamFile(w http.ResponseWriter, r *http.Request, fn string, attr
 
 // lookupFile fetches the file's project owner and expiration from the DB.
 // Both fields are immutable once written, so the in-process cache only
-// needs to be short enough to absorb bursts on the same fn — not to track
-// any state that can change underneath us.
+// needs to be short enough to absorb bursts on the same fn — not to
+// track any state that can change underneath us.
+//
+// The DB query runs inside sf.Do so a thundering herd at the cache-miss
+// edge (cold start, or the moment a 60s entry expires under load)
+// collapses to a single Postgres round-trip. Every concurrent caller
+// for the same fn gets the same result without each one issuing its
+// own query.
 func lookupFile(ctx context.Context, fn string) fileMeta {
 	cacheKey := fileCacheKey(fn)
 	if v, ok := cachestore.Get[fileMeta](cacheKey); ok {
 		return v
 	}
 
-	var (
-		m       fileMeta
-		expires sql.NullTime
-	)
-	err := pgctx.QueryRow(ctx, `
-		SELECT project_id, expires_at FROM files WHERE fn = $1
-	`, fn).Scan(&m.ProjectID, &expires)
-	switch {
-	case err == nil:
-		m.Found = true
-		if expires.Valid {
-			m.ExpiresAt = expires.Time
+	m, _, _ := sf.Do(ctx, "lookupFile|"+fn, func(ctx context.Context) (fileMeta, error) {
+		// Re-check the cache: a sibling caller may have populated it
+		// while we were queued behind sf's mutex.
+		if v, ok := cachestore.Get[fileMeta](cacheKey); ok {
+			return v, nil
 		}
-	case errors.Is(err, sql.ErrNoRows):
-		// Leave m zero-valued (Found=false). Don't cache-poison on
-		// transient DB errors below, but a confirmed miss is fine.
-	default:
-		slog.Error("lookup file", "fn", fn, "error", err)
-		return fileMeta{}
-	}
 
-	cachestore.Set(cacheKey, m, &cachestore.SetOptions{TTL: fileMetaCacheTTL})
+		recordLookupFileDBQuery(fn)
+		var (
+			m       fileMeta
+			expires sql.NullTime
+		)
+		err := pgctx.QueryRow(ctx, `
+			SELECT project_id, expires_at FROM files WHERE fn = $1
+		`, fn).Scan(&m.ProjectID, &expires)
+		switch {
+		case err == nil:
+			m.Found = true
+			if expires.Valid {
+				m.ExpiresAt = expires.Time
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// Found=false — a confirmed miss is fine to cache.
+		default:
+			// Transient DB error: don't cache-poison. Returning here
+			// also skips the cache write below; the next caller will
+			// retry the query.
+			slog.Error("lookup file", "fn", fn, "error", err)
+			return fileMeta{}, nil
+		}
+
+		cachestore.Set(cacheKey, m, &cachestore.SetOptions{TTL: fileMetaCacheTTL})
+		return m, nil
+	})
 	return m
+}
+
+// lookupFileDBQueries counts the number of actual Postgres SELECTs
+// issued by lookupFile, keyed by fn. The counter is only bumped inside
+// the singleflight closure, so a successful sf.Do collapse leaves it at
+// 1 even after N concurrent callers. Production code only writes here;
+// only tests read it. Per-fn so parallel tests don't trample each other.
+var lookupFileDBQueries sync.Map // map[string]*atomic.Uint64
+
+func recordLookupFileDBQuery(fn string) {
+	v, _ := lookupFileDBQueries.LoadOrStore(fn, new(atomic.Uint64))
+	v.(*atomic.Uint64).Add(1)
+}
+
+// lookupFileDBQueryCount returns how many DB queries lookupFile has
+// issued for fn since process start. Test-only.
+func lookupFileDBQueryCount(fn string) uint64 {
+	v, ok := lookupFileDBQueries.Load(fn)
+	if !ok {
+		return 0
+	}
+	return v.(*atomic.Uint64).Load()
 }

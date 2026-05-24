@@ -11,6 +11,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/moonrhythm/cachestore v0.0.0-20241226112208-fd22884c5b60
 	github.com/moonrhythm/parapet v0.13.6
+	github.com/moonrhythm/sf v1.0.2
 	github.com/prometheus/client_golang v1.20.5
 	gocloud.dev v0.45.0
 )

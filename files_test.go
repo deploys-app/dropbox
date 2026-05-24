@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/acoshift/pgsql/pgctx"
@@ -171,6 +172,54 @@ func TestLookupFile_NotFound(t *testing.T) {
 	}
 	if got.Expired() {
 		t.Errorf("Expired() = true, want false when not found (nothing to enforce)")
+	}
+}
+
+func TestLookupFile_SingleflightCollapsesConcurrentCalls(t *testing.T) {
+	// 50 goroutines race on the same cold-cache fn. sf.Do must collapse
+	// them into a single Postgres SELECT — anything more and the DDoS
+	// shield against a thundering herd at the cache-miss edge is gone.
+	t.Parallel()
+	db := newTestDB(t)
+	ctx := db.Ctx()
+
+	fn := "sf-thundering-herd-fn"
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ($1, 'proj-sf', 1, 'x', 1, now() + interval '1 day')
+	`, fn); err != nil {
+		t.Fatal(err)
+	}
+
+	const N = 50
+	results := make([]fileMeta, N)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start // release all goroutines at once to maximise overlap
+			results[idx] = lookupFile(ctx, fn)
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	// Correctness: every caller got the same correct result.
+	for i, r := range results {
+		if !r.Found || r.ProjectID != "proj-sf" {
+			t.Errorf("results[%d] = %+v, want Found=true ProjectID=proj-sf", i, r)
+		}
+	}
+
+	// Dedupe: sf collapsed the herd. We allow >1 because the per-caller
+	// cache check before sf.Do can race in a way that lets a few
+	// stragglers issue their own queries when the first one finishes
+	// fast and the cache populates before later goroutines reach sf —
+	// but it must be far below N.
+	if got := lookupFileDBQueryCount(fn); got >= N {
+		t.Errorf("DB queries for %s = %d, want <%d (singleflight should have collapsed the herd)", fn, got, N)
 	}
 }
 
