@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -112,12 +113,28 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 	a.streamFile(w, r, fn, attrs, meta.ProjectID)
 }
 
+// cdnDeadResponseTTL is how long the CDN edge should cache "this URL is
+// dead" responses (410 expired, 404 bucket-missing). Long enough that a
+// shared-then-expired URL stops hammering origin, short enough that the
+// answer can update if we ever change behavior.
+const cdnDeadResponseTTL = time.Hour
+
 // cdnFileHandler is the origin endpoint the CDN edge fetches from. The
 // token in the URL is the same signed token we issued to the user, so
 // the HMAC check still gates the edge — only URLs we issued can reach
 // the bucket. Streams the body without metrics so the CDN sees a plain
 // response; expired files are refused here too so the CDN can't refresh
 // its cache with bytes the user is no longer entitled to.
+//
+// Each response sets Cache-Control to tell the edge how long to cache:
+//   - success (200): public, max-age={remaining TTL}, immutable — fn is
+//     unique per upload so the body never changes; cap at the file's
+//     expires_at so the edge stops serving past end-of-life.
+//   - expired (410) and bucket-missing (404): public, max-age=3600 —
+//     the answer is permanent, so let the edge absorb repeat probes.
+//   - invalid token (404): no Cache-Control. Every garbage token is a
+//     unique URL, so caching doesn't reduce origin load and would just
+//     burn edge cache slots on attacker traffic.
 func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 
@@ -133,10 +150,12 @@ func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 
 	meta := lookupFile(r.Context(), fn)
 	if meta.Expired() {
+		setDeadCacheControl(w)
 		http.Error(w, "file expired", http.StatusGone)
 		return
 	}
 	if meta.BucketMissing {
+		setDeadCacheControl(w)
 		http.NotFound(w, r)
 		return
 	}
@@ -146,6 +165,7 @@ func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 		if gcerrors.Code(err) == gcerrors.NotFound {
 			meta.BucketMissing = true
 			cachestore.Set(fileCacheKey(fn), meta, &cachestore.SetOptions{TTL: fileMetaCacheTTL})
+			setDeadCacheControl(w)
 			http.NotFound(w, r)
 			return
 		}
@@ -153,7 +173,22 @@ func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pre-set Cache-Control so streamFile's attrs.CacheControl fallback
+	// doesn't overwrite it. If we have no expires_at to work from
+	// (insert-failed upload), fall through to the bucket's value.
+	if !meta.ExpiresAt.IsZero() {
+		remaining := time.Until(meta.ExpiresAt)
+		if remaining < 0 {
+			remaining = 0
+		}
+		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d, immutable", int(remaining.Seconds())))
+	}
+
 	a.streamFile(w, r, fn, attrs, "")
+}
+
+func setDeadCacheControl(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cdnDeadResponseTTL.Seconds())))
 }
 
 // streamFile copies the object body to w with the cached headers. When
@@ -172,7 +207,10 @@ func (a *App) streamFile(w http.ResponseWriter, r *http.Request, fn string, attr
 	}
 	defer reader.Close()
 
-	if attrs.CacheControl != "" {
+	// Only fall back to the bucket's CacheControl if the caller hasn't
+	// already chosen one. cdnFileHandler pre-sets a TTL-aligned policy;
+	// the non-CDN fileHandler leaves it unset and gets the bucket value.
+	if attrs.CacheControl != "" && w.Header().Get("Cache-Control") == "" {
 		w.Header().Set("Cache-Control", attrs.CacheControl)
 	}
 	if attrs.ContentDisposition != "" {

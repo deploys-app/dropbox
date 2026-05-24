@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -565,6 +566,120 @@ func TestCDNFileHandler_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+	// Bucket NotFound for a signed token → cache the negative at the
+	// edge so the same dead URL doesn't keep hitting origin.
+	if cc := w.Header().Get("Cache-Control"); cc != "public, max-age=3600" {
+		t.Errorf("Cache-Control = %q, want public, max-age=3600", cc)
+	}
+}
+
+func TestCDNFileHandler_SuccessCacheControlUsesRemainingTTL(t *testing.T) {
+	// The CDN response must cap max-age at the file's remaining TTL so
+	// the edge stops serving past expires_at. fn is unique per upload
+	// so we mark the body immutable.
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	fn := validTestFn("cdncc")
+	bw, err := bkt.NewWriter(t.Context(), fn, &blob.WriterOptions{
+		CacheControl: "public, max-age=86400", // bucket default — must be overridden
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw.Write([]byte("data"))
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ($1, 'proj-cc', 4, 'x', 7, now() + interval '7 days')
+	`, fn); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+	app.routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	cc := w.Header().Get("Cache-Control")
+	if !strings.HasPrefix(cc, "public, max-age=") || !strings.HasSuffix(cc, ", immutable") {
+		t.Fatalf("Cache-Control = %q, want shape 'public, max-age=N, immutable'", cc)
+	}
+	// Extract and sanity-check the max-age — must reflect ~7 days, not
+	// the bucket default of 86400.
+	var maxAge int
+	if _, err := fmt.Sscanf(cc, "public, max-age=%d, immutable", &maxAge); err != nil {
+		t.Fatalf("parse max-age from %q: %v", cc, err)
+	}
+	const sevenDays = 7 * 24 * 3600
+	if maxAge < sevenDays-3600 || maxAge > sevenDays {
+		t.Errorf("max-age = %d, want roughly 7 days (%d ± 1h)", maxAge, sevenDays)
+	}
+}
+
+func TestCDNFileHandler_ExpiredCacheControl(t *testing.T) {
+	// 410 response must carry a short Cache-Control so the edge stops
+	// asking origin for an expired URL that's still in circulation.
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	fn := validTestFn("cdnccexp")
+	bw, _ := bkt.NewWriter(t.Context(), fn, nil)
+	bw.Write([]byte("stale"))
+	bw.Close()
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ($1, 'proj-cc', 5, 'x', 1, now() - interval '1 hour')
+	`, fn); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+	app.routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410", w.Code)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "public, max-age=3600" {
+		t.Errorf("Cache-Control = %q, want public, max-age=3600", cc)
+	}
+}
+
+func TestCDNFileHandler_InvalidTokenNoCacheControl(t *testing.T) {
+	// Forgeable garbage tokens must NOT get a Cache-Control — each
+	// token is a unique URL so caching wouldn't reduce origin load and
+	// would just fill edge slots on attacker traffic.
+	t.Parallel()
+	app := newTestApp(newTestBucket(t), authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/garbage", nil)
+	w := httptest.NewRecorder()
+	app.routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+	if cc := w.Header().Get("Cache-Control"); cc != "" {
+		t.Errorf("Cache-Control = %q, want empty (attacker traffic shouldn't be cached)", cc)
 	}
 }
 
