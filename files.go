@@ -38,6 +38,18 @@ func (m fileMeta) Expired() bool {
 func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 	fn := r.PathValue("fn")
 
+	// Check the DB *before* touching GCS so a DDoS against an expired fn
+	// is absorbed by the in-process cache (60s TTL on an immutable row)
+	// instead of becoming one billed Bucket.Attributes call per request.
+	// For non-expired files this just reorders two calls we'd make anyway;
+	// for files with no DB row (insert-failed uploads) we fall through to
+	// the bucket exactly as before.
+	meta := lookupFile(r.Context(), fn)
+	if meta.Expired() {
+		http.Error(w, "file expired", http.StatusGone)
+		return
+	}
+
 	attrs, err := a.Bucket.Attributes(r.Context(), fn)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
@@ -45,16 +57,6 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	meta := lookupFile(r.Context(), fn)
-	if meta.Expired() {
-		// Refuse before counting metrics or redirecting — the GC will
-		// catch up and drop the object, but until then we don't want the
-		// CDN to cache (or the caller to receive) bytes the user is no
-		// longer entitled to.
-		http.Error(w, "file expired", http.StatusGone)
 		return
 	}
 
@@ -81,6 +83,13 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 	fn := r.PathValue("fn")
 
+	// Same DDoS-protection ordering as fileHandler: cached expired check
+	// first so the edge can't amplify into GCS by chasing an expired URL.
+	if lookupFile(r.Context(), fn).Expired() {
+		http.Error(w, "file expired", http.StatusGone)
+		return
+	}
+
 	attrs, err := a.Bucket.Attributes(r.Context(), fn)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
@@ -88,11 +97,6 @@ func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if lookupFile(r.Context(), fn).Expired() {
-		http.Error(w, "file expired", http.StatusGone)
 		return
 	}
 

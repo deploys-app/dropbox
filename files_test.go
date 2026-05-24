@@ -230,6 +230,60 @@ func TestFileHandler_ExpiredReturnsGone(t *testing.T) {
 	}
 }
 
+func TestFileHandler_ExpiredSkipsBucket(t *testing.T) {
+	// Expired DB row, *empty bucket* — proves the expired check runs
+	// before Bucket.Attributes. Under DDoS this is the difference between
+	// every request burning a GCS Class B operation and every request
+	// being a cheap cache hit. If the order regresses, this test starts
+	// returning 404 (bucket-NotFound) instead of 410.
+	t.Parallel()
+	db := newTestDB(t)
+	app := newTestApp(newTestBucket(t), authorized)
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ('expiredghost', 'proj-xyz', 99, 'x', 1, now() - interval '1 hour')
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/files/expiredghost", nil)
+	r = r.WithContext(ctx)
+	r.SetPathValue("fn", "expiredghost")
+	w := httptest.NewRecorder()
+	app.fileHandler(w, r)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410 (expired check must run before bucket call)", w.Code)
+	}
+}
+
+func TestCDNFileHandler_ExpiredSkipsBucket(t *testing.T) {
+	// Same DDoS-protection assertion for the /_cdn/{fn} origin path.
+	t.Parallel()
+	db := newTestDB(t)
+	app := newTestApp(newTestBucket(t), authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ('expiredghostcdn', 'proj-xyz', 99, 'x', 1, now() - interval '1 hour')
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/expiredghostcdn", nil)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+	app.routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410 (expired check must run before bucket call)", w.Code)
+	}
+}
+
 func TestFileHandler_ExpiredOverridesCDNRedirect(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
