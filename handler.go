@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
-	"encoding/base64"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,6 +25,7 @@ type App struct {
 	BaseURL        string
 	CDNBaseURL     string
 	InternalSecret string
+	SignKey        []byte
 	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
 }
 
@@ -32,8 +35,8 @@ func (a *App) routes() http.Handler {
 		w.Write([]byte("Deploys.app Dropbox Service"))
 	})
 	mux.HandleFunc("POST /{$}", a.uploadHandler)
-	mux.HandleFunc("GET /files/{fn}", a.fileHandler)
-	mux.HandleFunc("GET /_cdn/{fn}", a.cdnFileHandler)
+	mux.HandleFunc("GET /files/{token}", a.fileHandler)
+	mux.HandleFunc("GET /_cdn/{token}", a.cdnFileHandler)
 	mux.HandleFunc("POST /internal/gc", a.gcHandler)
 	return mux
 }
@@ -112,16 +115,95 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"ok": true,
 		"result": map[string]any{
-			"downloadUrl": a.BaseURL + fn,
+			"downloadUrl": a.BaseURL + makeToken(a.SignKey, fn),
 			"expiresAt":   expiresAt.Format(time.RFC3339),
 		},
 	})
 }
 
+// Filename + signature scheme.
+//
+// `fn` is what we store in the bucket and the DB — a random 24-char
+// alphanumeric string (~143 bits of entropy, drawn from
+// [0-9A-Za-z] with rejection sampling). No special chars, so URLs are
+// clean and we don't need URL-safe-base64 tricks.
+//
+// `token` is what appears in the public URL: `fn` + "-" + 20-char
+// lowercase-hex HMAC-SHA256 tag (80-bit) keyed by App.SignKey. The
+// handlers check the tag before any DB or GCS work, so a flood of
+// random `/files/{token}` requests by an attacker who doesn't know
+// the key gets 404'd in CPU. The "-" separator means we can change
+// `fnLen` later without invalidating old tokens — parseToken splits
+// on it instead of relying on a fixed cut point. fn is alphanumeric
+// and sig is hex, so neither side can contain a "-".
+const (
+	fnLen    = 24
+	sigLen   = 20 // 80 bits of HMAC, hex-encoded
+	tokenSep = "-"
+)
+
+const fnAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+// generateFilename returns a fresh fnLen-char random alphanumeric fn.
+// Uses rejection sampling so each char is uniformly drawn from
+// fnAlphabet (avoiding the mod-bias you'd get from `b%62`).
 func generateFilename() string {
-	b := make([]byte, 64)
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
+	out := make([]byte, fnLen)
+	buf := make([]byte, fnLen*2) // slack for rejection
+	pos := 0
+	for pos < fnLen {
+		if _, err := rand.Read(buf); err != nil {
+			panic(err) // crypto/rand failing is unrecoverable
+		}
+		for _, b := range buf {
+			if pos >= fnLen {
+				break
+			}
+			// 62 * 4 = 248 is the largest unbiased range under 256;
+			// reject 248..255.
+			if b < 248 {
+				out[pos] = fnAlphabet[b%62]
+				pos++
+			}
+		}
+	}
+	return string(out)
+}
+
+// signFilename returns the sigLen-char lowercase-hex HMAC tag for fn
+// under key. Caller's responsibility to keep `key` secret.
+func signFilename(key []byte, fn string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(fn))
+	sum := mac.Sum(nil)
+	return hex.EncodeToString(sum[:sigLen/2])
+}
+
+// makeToken builds the public URL token for fn: `fn + "-" + sig`.
+func makeToken(key []byte, fn string) string {
+	return fn + tokenSep + signFilename(key, fn)
+}
+
+// parseToken splits a public URL token on tokenSep, verifies the HMAC
+// in constant time, and returns the fn on success. On any failure —
+// missing separator, empty side, bad sig, anything — it returns
+// (_, false) and the handler 404s without touching the DB or GCS.
+// This is the primary DDoS shield against random `/files/{garbage}`
+// floods. The split is structural (on the separator) rather than
+// positional, so changing fnLen later won't invalidate old tokens
+// still in circulation.
+func parseToken(key []byte, token string) (string, bool) {
+	idx := strings.IndexByte(token, tokenSep[0])
+	if idx <= 0 || idx == len(token)-1 {
+		return "", false
+	}
+	fn := token[:idx]
+	sig := token[idx+1:]
+	expected := signFilename(key, fn)
+	if !hmac.Equal([]byte(sig), []byte(expected)) {
+		return "", false
+	}
+	return fn, true
 }
 
 func escapeFilename(s string) string {

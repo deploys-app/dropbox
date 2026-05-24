@@ -141,6 +141,8 @@ github.com/moonrhythm/parapet v0.13.6 h1:xpoXIEI1JiNVTs8F2edmZn75gMV2Dg6KQdpOlUt
 github.com/moonrhythm/parapet v0.13.6/go.mod h1:QEhl1pk8viGxC3xz1XLmzU8UZRT5qxHXgUln5hXlRCQ=
 github.com/moonrhythm/pq v0.0.0-20230504040008-09b0644d6569 h1:VDLLIg19HS2A7HuMY8ukFNrdgrRqGn5O0xQ4zrSgD/0=
 github.com/moonrhythm/pq v0.0.0-20230504040008-09b0644d6569/go.mod h1:V43Namo2SgpLTmiaQXjiKPuKvqGamIhPawsQF+pv8xw=
+github.com/moonrhythm/sf v1.0.2 h1:W7uHinFjiO1A+7UNDANka78J9jk1nQz+W7IzK0bpj68=
+github.com/moonrhythm/sf v1.0.2/go.mod h1:GVFIuH7VwfIn+wVi+kcjxAUcFsQ2JmiUrQuIg5yuono=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=

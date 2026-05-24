@@ -25,6 +25,7 @@ Docker image is built and pushed automatically on push to `main`. See `.github/w
 |---------------|----------------------------------------------------------|
 | `db_url`      | PostgreSQL connection string                             |
 | `bucket_name` | GCS bucket name                                          |
+| `sign_key`    | HMAC key for signing download tokens. Rotating invalidates every outstanding URL. |
 | `base_url`    | Download URL prefix (default: `https://dropbox.deploys.app/files/`) |
 | `PORT`        | Listen port (default: `8080`)                            |
 
@@ -74,11 +75,13 @@ File data binary
 {
 	"ok": true,
 	"result": {
-		"downloadUrl": "https://dropbox.deploys.app/files/<filename>",
+		"downloadUrl": "https://dropbox.deploys.app/files/<token>",
 		"expiresAt": "2020-01-01T01:01:01Z"
 	}
 }
 ```
+
+`<token>` is `{fn}-{sig}` (currently 45 chars): a 24-char random alphanumeric filename, a `-` separator, and a 20-char HMAC-SHA256 signature (keyed by `sign_key`). Tampered or made-up tokens are rejected before any DB or storage lookup. The separator means future changes to filename length stay backward-compatible.
 
 ##### Unauthorized
 

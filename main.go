@@ -61,6 +61,10 @@ func main() {
 		BaseURL:        config.StringDefault("base_url", "https://dropbox.deploys.app/files/"),
 		CDNBaseURL:     config.String("cdn_base_url"),
 		InternalSecret: config.String("internal_secret"),
+		// sign_key is the HMAC key used to sign download tokens.
+		// Required — rotating it invalidates all outstanding URLs (which
+		// is the right behavior if a key ever leaks).
+		SignKey: []byte(config.MustString("sign_key")),
 	}
 
 	promAddr := config.StringDefault("prom_addr", ":9187")

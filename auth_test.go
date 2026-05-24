@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // A single mock server is started lazily and serves every auth test. Each test
@@ -212,6 +213,49 @@ func TestCheckAuth_CachesResult(t *testing.T) {
 
 	if got := calls.Load(); got != 1 {
 		t.Errorf("auth API called %d times, want 1 (should be cached)", got)
+	}
+}
+
+func TestCheckAuth_SingleflightCollapsesConcurrentCalls(t *testing.T) {
+	// Same shape as TestLookupFile_SingleflightCollapsesConcurrentCalls:
+	// 50 goroutines race on a cold-cache (auth, project, projectId)
+	// triple. sf.Do must collapse them into a single /me.authorized
+	// round-trip — otherwise a thundering herd of uploads from one
+	// caller (e.g. parallel CI jobs holding the same bearer) hammers
+	// the deploys.app API on every cache-miss edge.
+	t.Parallel()
+	var calls atomic.Int64
+	token := "Bearer " + t.Name()
+	registerAuthMock(t, token, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		// A short sleep widens the singleflight window so the test
+		// reliably catches a regression where dedupe is broken.
+		time.Sleep(50 * time.Millisecond)
+		jsonAuthMock(true, true)(w, r)
+	})
+
+	const N = 50
+	results := make([]AuthResult, N)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			<-start
+			results[idx] = checkAuth(context.Background(), token, "sfproject", "")
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, r := range results {
+		if !r.Authorized {
+			t.Errorf("results[%d] not authorized", i)
+		}
+	}
+	if got := calls.Load(); got >= N {
+		t.Errorf("auth API called %d times, want <%d (sf should have collapsed the herd)", got, N)
 	}
 }
 
