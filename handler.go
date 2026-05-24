@@ -21,7 +21,7 @@ import (
 type App struct {
 	Bucket         *blob.Bucket
 	BaseURL        string
-	CDNDomain      string
+	CDNBaseURL     string
 	InternalSecret string
 	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
 }

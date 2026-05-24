@@ -59,7 +59,7 @@ func main() {
 	app := &App{
 		Bucket:         bkt,
 		BaseURL:        config.StringDefault("base_url", "https://dropbox.deploys.app/files/"),
-		CDNDomain:      config.String("cdn_domain"),
+		CDNBaseURL:     config.String("cdn_base_url"),
 		InternalSecret: config.String("internal_secret"),
 	}
 

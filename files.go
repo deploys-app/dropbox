@@ -38,10 +38,10 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 	// actual bytes) and redirect. Cache hits never come back to this origin,
 	// so the bill is an over-approximation; that matches the registry
 	// pattern and is what /_internal/calculate-dropbox-usages assumes.
-	if a.CDNDomain != "" && !isInternalClient(r) {
+	if a.CDNBaseURL != "" && !isInternalClient(r) {
 		downloadCount.WithLabelValues(projectID).Inc()
 		egressBytes.WithLabelValues(projectID).Add(float64(attrs.Size))
-		http.Redirect(w, r, "https://"+a.CDNDomain+"/"+fn, http.StatusTemporaryRedirect)
+		http.Redirect(w, r, a.CDNBaseURL+fn, http.StatusTemporaryRedirect)
 		return
 	}
 

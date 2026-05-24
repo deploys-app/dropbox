@@ -161,7 +161,7 @@ func TestFileHandler_CDNRedirect(t *testing.T) {
 	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	app.CDNDomain = "cdn.example.com"
+	app.CDNBaseURL = "https://cdn.example.com/"
 
 	bw, err := bkt.NewWriter(t.Context(), "cdnfile", nil)
 	if err != nil {
@@ -196,7 +196,7 @@ func TestFileHandler_CDNInternalClientStreams(t *testing.T) {
 	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	app.CDNDomain = "cdn.example.com"
+	app.CDNBaseURL = "https://cdn.example.com/"
 
 	bw, err := bkt.NewWriter(t.Context(), "internalfile", nil)
 	if err != nil {
@@ -227,7 +227,7 @@ func TestFileHandler_CDNRedirectPublicXRealIP(t *testing.T) {
 	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	app.CDNDomain = "cdn.example.com"
+	app.CDNBaseURL = "https://cdn.example.com/"
 
 	bw, err := bkt.NewWriter(t.Context(), "publicfile", nil)
 	if err != nil {
@@ -255,7 +255,7 @@ func TestCDNFileHandler_Streams(t *testing.T) {
 	db := newTestDB(t)
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
-	app.CDNDomain = "cdn.example.com"
+	app.CDNBaseURL = "https://cdn.example.com/"
 
 	bw, err := bkt.NewWriter(t.Context(), "origin", &blob.WriterOptions{
 		CacheControl: "public, max-age=86400",
@@ -288,7 +288,7 @@ func TestCDNFileHandler_NotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 	app := newTestApp(newTestBucket(t), authorized)
-	app.CDNDomain = "cdn.example.com"
+	app.CDNBaseURL = "https://cdn.example.com/"
 
 	r := httptest.NewRequest(http.MethodGet, "/_cdn/nope", nil)
 	r = r.WithContext(db.Ctx())
