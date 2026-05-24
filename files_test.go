@@ -126,7 +126,7 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 	}
 }
 
-func TestLookupFileProject_FromDB(t *testing.T) {
+func TestLookupFile_FromDB(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 	ctx := db.Ctx()
@@ -138,21 +138,170 @@ func TestLookupFileProject_FromDB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := lookupFileProject(ctx, "lookupfile"); got != "proj-xyz" {
-		t.Errorf("lookupFileProject = %q, want proj-xyz", got)
+	got := lookupFile(ctx, "lookupfile")
+	if !got.Found {
+		t.Fatal("Found = false, want true")
+	}
+	if got.ProjectID != "proj-xyz" {
+		t.Errorf("ProjectID = %q, want proj-xyz", got.ProjectID)
+	}
+	if got.Expired() {
+		t.Errorf("Expired() = true, want false (expires_at is in the future)")
 	}
 	// Second call exercises the cache hit path.
-	if got := lookupFileProject(ctx, "lookupfile"); got != "proj-xyz" {
-		t.Errorf("lookupFileProject (cached) = %q, want proj-xyz", got)
+	if got := lookupFile(ctx, "lookupfile"); got.ProjectID != "proj-xyz" {
+		t.Errorf("ProjectID (cached) = %q, want proj-xyz", got.ProjectID)
 	}
 }
 
-func TestLookupFileProject_NotFound(t *testing.T) {
+func TestLookupFile_NotFound(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
 
-	if got := lookupFileProject(db.Ctx(), "missingfile"); got != "" {
-		t.Errorf("lookupFileProject = %q, want empty for missing fn", got)
+	got := lookupFile(db.Ctx(), "missingfile")
+	if got.Found {
+		t.Errorf("Found = true, want false for missing fn")
+	}
+	if got.ProjectID != "" {
+		t.Errorf("ProjectID = %q, want empty for missing fn", got.ProjectID)
+	}
+	if got.Expired() {
+		t.Errorf("Expired() = true, want false when not found (nothing to enforce)")
+	}
+}
+
+func TestLookupFile_Expired(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	ctx := db.Ctx()
+
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ('expiredmeta', 'proj-xyz', 1, 'x', 1, now() - interval '1 hour')
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	got := lookupFile(ctx, "expiredmeta")
+	if !got.Found {
+		t.Fatal("Found = false, want true")
+	}
+	if !got.Expired() {
+		t.Errorf("Expired() = false, want true (expires_at is in the past)")
+	}
+}
+
+func TestFileHandler_ExpiredReturnsGone(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	// Object still in the bucket — GC hasn't run yet — but the DB row
+	// says it expired an hour ago.
+	bw, err := bkt.NewWriter(t.Context(), "expiredfile", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw.Write([]byte("stale bytes"))
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ('expiredfile', 'proj-xyz', 11, 'x', 1, now() - interval '1 hour')
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/files/expiredfile", nil)
+	r = r.WithContext(ctx)
+	r.SetPathValue("fn", "expiredfile")
+	w := httptest.NewRecorder()
+	app.fileHandler(w, r)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410", w.Code)
+	}
+	if body := w.Body.String(); strings.Contains(body, "stale bytes") {
+		t.Errorf("body leaked object content: %q", body)
+	}
+}
+
+func TestFileHandler_ExpiredOverridesCDNRedirect(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	bw, err := bkt.NewWriter(t.Context(), "expiredcdn", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw.Write([]byte("stale"))
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ('expiredcdn', 'proj-xyz', 5, 'x', 1, now() - interval '1 hour')
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/files/expiredcdn", nil)
+	r = r.WithContext(ctx)
+	r.SetPathValue("fn", "expiredcdn")
+	w := httptest.NewRecorder()
+	app.fileHandler(w, r)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410 (must not redirect to CDN)", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("Location = %q, want empty (no redirect for expired files)", loc)
+	}
+}
+
+func TestCDNFileHandler_ExpiredReturnsGone(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	bw, err := bkt.NewWriter(t.Context(), "expiredorigin", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw.Write([]byte("stale origin"))
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := db.Ctx()
+	if _, err := pgctx.Exec(ctx, `
+		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
+		VALUES ('expiredorigin', 'proj-xyz', 12, 'x', 1, now() - interval '1 hour')
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/expiredorigin", nil)
+	r = r.WithContext(ctx)
+	w := httptest.NewRecorder()
+	app.routes().ServeHTTP(w, r)
+
+	if w.Code != http.StatusGone {
+		t.Fatalf("status = %d, want 410 (CDN origin must refuse expired files)", w.Code)
+	}
+	if body := w.Body.String(); strings.Contains(body, "stale origin") {
+		t.Errorf("body leaked object content to CDN edge: %q", body)
 	}
 }
 
