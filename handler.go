@@ -33,7 +33,7 @@ func (a *App) routes() http.Handler {
 	})
 	mux.HandleFunc("POST /{$}", a.uploadHandler)
 	mux.HandleFunc("GET /files/{fn}", a.fileHandler)
-	mux.HandleFunc("GET /_cdn/files/{fn}", a.cdnFileHandler)
+	mux.HandleFunc("GET /_cdn/{fn}", a.cdnFileHandler)
 	mux.HandleFunc("POST /internal/gc", a.gcHandler)
 	return mux
 }

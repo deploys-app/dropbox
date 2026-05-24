@@ -23,7 +23,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 **Environment variables (optional):**
 - `base_url` — download URL prefix (default: `https://dropbox.deploys-files.app/`)
 - `api_endpoint` — deploys.app API base URL (default: `https://api.deploys.app`, override with internal address in production)
-- `cdn_domain` — when set, `GET /files/{fn}` records the download metric (counted against `attrs.Size`) and 307-redirects to `https://{cdn_domain}/{fn}`. The CDN edge is expected to fetch its origin at `https://dropbox.deploys.app/_cdn/files/{fn}`, which streams the file unauthenticated and without metrics. In-cluster callers (private/loopback/link-local `X-Real-Ip`) bypass the redirect and stream directly. Unset = original streaming behavior.
+- `cdn_domain` — when set, `GET /files/{fn}` records the download metric (counted against `attrs.Size`) and 307-redirects to `https://{cdn_domain}/{fn}`. The CDN edge is expected to fetch its origin at `https://dropbox.deploys.app/_cdn/{fn}`, which streams the file unauthenticated and without metrics. In-cluster callers (private/loopback/link-local `X-Real-Ip`) bypass the redirect and stream directly. Unset = original streaming behavior.
 - `PORT` — listen port (default: `8080`)
 - `log_level` — slog level (default: info)
 

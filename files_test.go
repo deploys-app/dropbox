@@ -268,7 +268,7 @@ func TestCDNFileHandler_Streams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/files/origin", nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/origin", nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -290,7 +290,7 @@ func TestCDNFileHandler_NotFound(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
 	app.CDNDomain = "cdn.example.com"
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/files/nope", nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/nope", nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
