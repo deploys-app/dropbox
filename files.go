@@ -47,12 +47,16 @@ func (m fileMeta) Expired() bool {
 func fileCacheKey(fn string) string { return "fn|" + fn }
 
 func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
-	fn := r.PathValue("fn")
+	token := r.PathValue("token")
 
-	// Reject obviously-invalid fns in CPU. A flood of random-garbage fns
-	// would otherwise miss the per-fn cache on every request (each key is
-	// unique) and burn one DB query + one GCS Class B op apiece.
-	if !isValidFilename(fn) {
+	// Verify the HMAC tag in the token before any I/O. A flood of random
+	// /files/{garbage} requests by an attacker who doesn't have SignKey
+	// is rejected in CPU here — no DB query, no GCS Attributes call.
+	// This is the primary DDoS shield; the per-fn cache and the
+	// negative bucket cache only kick in once we've established the
+	// token is one we issued.
+	fn, ok := parseToken(a.SignKey, token)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
@@ -93,32 +97,36 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 
 	// When a CDN is configured and the caller is not in-cluster, record the
 	// download as if we were serving the full file (the CDN will handle the
-	// actual bytes) and redirect. Cache hits never come back to this origin,
-	// so the bill is an over-approximation; that matches the registry
-	// pattern and is what /_internal/calculate-dropbox-usages assumes.
+	// actual bytes) and redirect. The redirect target preserves the full
+	// signed token so the CDN's origin-fetch hits cdnFileHandler with a
+	// URL we can re-verify. Cache hits never come back to this origin, so
+	// the bill is an over-approximation; that matches the registry pattern
+	// and is what /_internal/calculate-dropbox-usages assumes.
 	if a.CDNBaseURL != "" && !isInternalClient(r) {
 		downloadCount.WithLabelValues(meta.ProjectID).Inc()
 		egressBytes.WithLabelValues(meta.ProjectID).Add(float64(attrs.Size))
-		http.Redirect(w, r, a.CDNBaseURL+fn, http.StatusTemporaryRedirect)
+		http.Redirect(w, r, a.CDNBaseURL+token, http.StatusTemporaryRedirect)
 		return
 	}
 
 	a.streamFile(w, r, fn, attrs, meta.ProjectID)
 }
 
-// cdnFileHandler is the origin endpoint the CDN edge fetches from. It is
-// unauthenticated — file URLs are 86-char crypto-random and only reachable
-// if you know them — and skips the redirect/metrics so the CDN sees a
-// plain streaming response. Expired files are refused here too so the CDN
-// can't refresh its cache with bytes the user is no longer entitled to.
+// cdnFileHandler is the origin endpoint the CDN edge fetches from. The
+// token in the URL is the same signed token we issued to the user, so
+// the HMAC check still gates the edge — only URLs we issued can reach
+// the bucket. Streams the body without metrics so the CDN sees a plain
+// response; expired files are refused here too so the CDN can't refresh
+// its cache with bytes the user is no longer entitled to.
 func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
-	fn := r.PathValue("fn")
+	token := r.PathValue("token")
 
-	// Same DDoS-protection ladder as fileHandler: validate format, then
-	// consult the per-fn cache, then GCS. The edge would otherwise
+	// Same DDoS-protection ladder as fileHandler: verify the signature,
+	// then consult the per-fn cache, then GCS. The edge would otherwise
 	// amplify a random-garbage flood or an expired-URL probe into one
 	// GCS op per request.
-	if !isValidFilename(fn) {
+	fn, ok := parseToken(a.SignKey, token)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}

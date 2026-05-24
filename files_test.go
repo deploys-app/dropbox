@@ -32,9 +32,9 @@ func TestFileHandler_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -61,9 +61,9 @@ func TestFileHandler_NotFound(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
 
 	fn := validTestFn("notexist")
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -88,7 +88,7 @@ func TestFileHandler_RouteIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -114,9 +114,9 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -270,9 +270,9 @@ func TestFileHandler_ExpiredReturnsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(ctx)
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -303,9 +303,9 @@ func TestFileHandler_ExpiredSkipsBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(ctx)
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -330,7 +330,7 @@ func TestCDNFileHandler_ExpiredSkipsBucket(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -365,9 +365,9 @@ func TestFileHandler_ExpiredOverridesCDNRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(ctx)
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -404,7 +404,7 @@ func TestCDNFileHandler_ExpiredReturnsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -434,17 +434,19 @@ func TestFileHandler_CDNRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d, want 307", w.Code)
 	}
-	if loc := w.Header().Get("Location"); loc != "https://cdn.example.com/"+fn {
-		t.Errorf("Location = %q, want https://cdn.example.com/%s", loc, fn)
+	// Redirect preserves the *full* signed token so the CDN's
+	// origin-fetch hits cdnFileHandler with a URL we can re-verify.
+	if want := "https://cdn.example.com/" + signedToken(fn); w.Header().Get("Location") != want {
+		t.Errorf("Location = %q, want %q", w.Header().Get("Location"), want)
 	}
 	// The default http.Redirect body is `<a href=...>Temporary Redirect</a>` —
 	// it must not contain the object bytes.
@@ -470,9 +472,9 @@ func TestFileHandler_CDNInternalClientStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	r.Header.Set("X-Real-Ip", "10.0.0.5") // private IP -> internal
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
@@ -502,9 +504,9 @@ func TestFileHandler_CDNRedirectPublicXRealIP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", fn)
+	r.SetPathValue("token", signedToken(fn))
 	r.Header.Set("X-Real-Ip", "203.0.113.5") // public IP -> CDN path
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
@@ -533,7 +535,7 @@ func TestCDNFileHandler_Streams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -556,7 +558,7 @@ func TestCDNFileHandler_NotFound(t *testing.T) {
 	app.CDNBaseURL = "https://cdn.example.com/"
 
 	fn := validTestFn("cdnnope")
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -566,40 +568,48 @@ func TestCDNFileHandler_NotFound(t *testing.T) {
 	}
 }
 
-func TestFileHandler_InvalidFilenameRejected(t *testing.T) {
-	// Garbage fns should 404 from the validator without touching DB or
-	// GCS. We pass a nil-context request: if the validator ever stops
-	// short-circuiting, lookupFile will panic on the missing pgctx and
-	// blow the test up — which is the right failure mode for a
-	// regression that removes the DDoS shield.
+func TestFileHandler_InvalidTokenRejected(t *testing.T) {
+	// Tokens that don't HMAC-verify must 404 from parseToken without
+	// touching DB or GCS. The test app has no pgctx attached, so if the
+	// signature shortcut ever regresses, lookupFile will panic and the
+	// test blows up loudly — which is the right failure mode for the
+	// primary DDoS shield going away.
 	t.Parallel()
 	app := newTestApp(newTestBucket(t), authorized)
 
-	cases := []string{
-		"",
-		"short",
-		"../../etc/passwd",
-		strings.Repeat("a", 85),                  // 1 short
-		strings.Repeat("a", 87),                  // 1 long
-		strings.Repeat("a", 85) + "!",            // bad char
-		strings.Repeat("a", 85) + "+",            // standard-base64 char, not URL-safe
-		strings.Repeat("a", 85) + "/",            // ditto
+	goodFn := validTestFn("good")
+	goodToken := signedToken(goodFn)
+	tamperedSig := goodToken[:tokenLen-1] + "0"
+	if tamperedSig == goodToken {
+		tamperedSig = goodToken[:tokenLen-1] + "1"
 	}
-	for _, fn := range cases {
-		t.Run("fn="+fn, func(t *testing.T) {
+	forgedDiffKey := makeToken([]byte("not-the-real-key"), goodFn)
+
+	cases := map[string]string{
+		"empty":             "",
+		"short":             "short",
+		"path-traversal":    "../../etc/passwd",
+		"one-char-short":    strings.Repeat("a", tokenLen-1),
+		"one-char-long":     strings.Repeat("a", tokenLen+1),
+		"right-len-bad-sig": strings.Repeat("a", tokenLen),
+		"tampered-sig":      tamperedSig,
+		"forged-other-key":  forgedDiffKey,
+	}
+	for name, token := range cases {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			r := httptest.NewRequest(http.MethodGet, "/files/x", nil)
-			r.SetPathValue("fn", fn)
+			r.SetPathValue("token", token)
 			w := httptest.NewRecorder()
 			app.fileHandler(w, r)
 			if w.Code != http.StatusNotFound {
-				t.Errorf("fn=%q: status = %d, want 404", fn, w.Code)
+				t.Errorf("token=%q: status = %d, want 404", token, w.Code)
 			}
 		})
 	}
 }
 
-func TestCDNFileHandler_InvalidFilenameRejected(t *testing.T) {
+func TestCDNFileHandler_InvalidTokenRejected(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(newTestBucket(t), authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
@@ -625,9 +635,9 @@ func TestFileHandler_BucketMissNegativeCached(t *testing.T) {
 
 	fn := validTestFn("missneg")
 
-	r1 := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r1 := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r1 = r1.WithContext(db.Ctx())
-	r1.SetPathValue("fn", fn)
+	r1.SetPathValue("token", signedToken(fn))
 	w1 := httptest.NewRecorder()
 	app.fileHandler(w1, r1)
 	if w1.Code != http.StatusNotFound {
@@ -643,9 +653,9 @@ func TestFileHandler_BucketMissNegativeCached(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r2 := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r2 := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
 	r2 = r2.WithContext(db.Ctx())
-	r2.SetPathValue("fn", fn)
+	r2.SetPathValue("token", signedToken(fn))
 	w2 := httptest.NewRecorder()
 	app.fileHandler(w2, r2)
 	if w2.Code != http.StatusNotFound {
@@ -667,7 +677,7 @@ func TestCDNFileHandler_BucketMissNegativeCached(t *testing.T) {
 
 	fn := validTestFn("missnegcdn")
 
-	r1 := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r1 := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
 	r1 = r1.WithContext(db.Ctx())
 	w1 := httptest.NewRecorder()
 	app.routes().ServeHTTP(w1, r1)
@@ -684,7 +694,7 @@ func TestCDNFileHandler_BucketMissNegativeCached(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r2 := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r2 := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
 	r2 = r2.WithContext(db.Ctx())
 	w2 := httptest.NewRecorder()
 	app.routes().ServeHTTP(w2, r2)

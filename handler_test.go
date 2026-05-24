@@ -23,15 +23,40 @@ func newTestBucket(t *testing.T) *blob.Bucket {
 	return bkt
 }
 
-// validTestFn returns an 86-char fn that passes isValidFilename, with
-// the descriptive suffix preserved so failing tests are still readable.
+// validTestFn returns an fnLen-char fn drawn from fnAlphabet, with the
+// descriptive suffix preserved so failing tests are still readable.
 // Distinct suffixes produce distinct fns, which keeps parallel tests
 // isolated in the in-process per-fn cache.
 func validTestFn(suffix string) string {
-	if len(suffix) > 86 {
+	if len(suffix) > fnLen {
 		panic("validTestFn: suffix too long: " + suffix)
 	}
-	return strings.Repeat("a", 86-len(suffix)) + suffix
+	return strings.Repeat("a", fnLen-len(suffix)) + suffix
+}
+
+// testSignKey is the fixed HMAC key used in every test app. Tests build
+// signed tokens with makeToken(testSignKey, fn) and the handlers verify
+// against this same key.
+var testSignKey = []byte("test-sign-key-do-not-use-in-prod")
+
+// signedToken wraps a test fn into the public URL token by HMAC-signing
+// it with testSignKey. Tests put this in the URL path; the handler
+// parses it back into fn for the bucket/DB lookup.
+func signedToken(fn string) string {
+	return makeToken(testSignKey, fn)
+}
+
+// tokenToFn is the inverse: pull the token off a downloadUrl, verify
+// it, and return the fn that's actually stored in the bucket and DB.
+// Tests use this when they need to inspect the upload's bucket object.
+func tokenToFn(t *testing.T, downloadURL string) string {
+	t.Helper()
+	token := strings.TrimPrefix(downloadURL, "https://example.com/")
+	fn, ok := parseToken(testSignKey, token)
+	if !ok {
+		t.Fatalf("downloadUrl %q does not contain a valid signed token", downloadURL)
+	}
+	return fn
 }
 
 func countObjects(t *testing.T, bkt *blob.Bucket) int {
@@ -61,6 +86,7 @@ func newTestApp(bkt *blob.Bucket, authFn func(context.Context, string, string, s
 	return &App{
 		Bucket:    bkt,
 		BaseURL:   "https://example.com/",
+		SignKey:   testSignKey,
 		checkAuth: authFn,
 	}
 }
@@ -312,7 +338,7 @@ func TestUpload_FilenameFromQuery(t *testing.T) {
 		t.Fatal("expected ok=true")
 	}
 
-	fn := strings.TrimPrefix(resp.Result.DownloadURL, "https://example.com/")
+	fn := tokenToFn(t, resp.Result.DownloadURL)
 	attrs, err := bkt.Attributes(t.Context(), fn)
 	if err != nil {
 		t.Fatal(err)
@@ -342,7 +368,7 @@ func TestUpload_FilenameFromHeader(t *testing.T) {
 		t.Fatal("expected ok=true")
 	}
 
-	fn := strings.TrimPrefix(resp.Result.DownloadURL, "https://example.com/")
+	fn := tokenToFn(t, resp.Result.DownloadURL)
 	attrs, err := bkt.Attributes(t.Context(), fn)
 	if err != nil {
 		t.Fatal(err)
@@ -371,7 +397,7 @@ func TestUpload_FilenameWithQuotesEscaped(t *testing.T) {
 		t.Fatal("expected ok=true")
 	}
 
-	fn := strings.TrimPrefix(resp.Result.DownloadURL, "https://example.com/")
+	fn := tokenToFn(t, resp.Result.DownloadURL)
 	attrs, err := bkt.Attributes(t.Context(), fn)
 	if err != nil {
 		t.Fatal(err)
@@ -396,7 +422,7 @@ func TestUpload_NoFilenameNoContentDisposition(t *testing.T) {
 
 	var resp uploadResp
 	json.NewDecoder(w.Body).Decode(&resp)
-	fn := strings.TrimPrefix(resp.Result.DownloadURL, "https://example.com/")
+	fn := tokenToFn(t, resp.Result.DownloadURL)
 	attrs, err := bkt.Attributes(t.Context(), fn)
 	if err != nil {
 		t.Fatal(err)
@@ -463,47 +489,117 @@ func TestGenerateFilename(t *testing.T) {
 	if a == b {
 		t.Error("expected unique filenames")
 	}
-	if len(a) != 86 {
-		t.Errorf("filename length = %d, want 86", len(a))
+	if len(a) != fnLen {
+		t.Errorf("filename length = %d, want %d", len(a), fnLen)
 	}
+	// Must be strictly alphanumeric — no special chars at all.
 	for _, c := range a {
-		if c == '+' || c == '/' || c == '=' {
-			t.Errorf("filename contains non-URL-safe char %q: %s", c, a)
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'A' && c <= 'Z':
+		case c >= 'a' && c <= 'z':
+		default:
+			t.Errorf("filename contains non-alphanumeric char %q: %s", c, a)
 		}
 	}
 }
 
-func TestIsValidFilename(t *testing.T) {
+func TestGenerateFilename_DistributionLooksUniform(t *testing.T) {
 	t.Parallel()
-	// Generated fns must always validate — this links the producer and
-	// the validator so a future change to either can't drift.
-	for i := 0; i < 16; i++ {
-		if fn := generateFilename(); !isValidFilename(fn) {
-			t.Errorf("generateFilename() = %q failed isValidFilename", fn)
+	// Rough check that rejection sampling doesn't bias the alphabet.
+	// With 1000 * fnLen = 24000 chars over 62 symbols, expected count
+	// per symbol is ~387. We just assert every symbol appears at least
+	// once, which would fail catastrophically if a whole half of the
+	// alphabet got dropped (e.g. by an off-by-one in the reject bound).
+	counts := map[byte]int{}
+	for i := 0; i < 1000; i++ {
+		for j := 0; j < len(generateFilename()); j++ {
+			counts[generateFilename()[j]]++
 		}
 	}
-
-	good := strings.Repeat("a", 86)
-	cases := []struct {
-		fn   string
-		want bool
-	}{
-		{good, true},
-		{"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuv", true}, // 86 chars, full alphabet
-		{"", false},
-		{"short", false},
-		{strings.Repeat("a", 85), false},
-		{strings.Repeat("a", 87), false},
-		{strings.Repeat("a", 85) + "!", false}, // bad char
-		{strings.Repeat("a", 85) + "+", false}, // standard-base64 only
-		{strings.Repeat("a", 85) + "/", false},
-		{strings.Repeat("a", 85) + "=", false}, // padding not allowed by RawURLEncoding
-		{strings.Repeat("a", 85) + " ", false},
-		{strings.Repeat("a", 85) + ".", false},
+	for _, c := range []byte(fnAlphabet) {
+		if counts[c] == 0 {
+			t.Errorf("symbol %q never appeared in 1000 generated fns", c)
+		}
 	}
-	for _, tc := range cases {
-		if got := isValidFilename(tc.fn); got != tc.want {
-			t.Errorf("isValidFilename(%q) = %v, want %v", tc.fn, got, tc.want)
+}
+
+func TestSignFilename_Deterministic(t *testing.T) {
+	t.Parallel()
+	fn := validTestFn("sigtest")
+	a := signFilename(testSignKey, fn)
+	b := signFilename(testSignKey, fn)
+	if a != b {
+		t.Errorf("signFilename not deterministic: %q vs %q", a, b)
+	}
+	if len(a) != sigLen {
+		t.Errorf("sig length = %d, want %d", len(a), sigLen)
+	}
+}
+
+func TestSignFilename_KeyMatters(t *testing.T) {
+	t.Parallel()
+	fn := validTestFn("keytest")
+	a := signFilename(testSignKey, fn)
+	b := signFilename([]byte("different-key"), fn)
+	if a == b {
+		t.Errorf("sig should differ across keys; got %q for both", a)
+	}
+}
+
+func TestParseToken_RoundTripsGeneratedToken(t *testing.T) {
+	t.Parallel()
+	for i := 0; i < 16; i++ {
+		fn := generateFilename()
+		token := makeToken(testSignKey, fn)
+		if len(token) != tokenLen {
+			t.Fatalf("token length = %d, want %d", len(token), tokenLen)
+		}
+		got, ok := parseToken(testSignKey, token)
+		if !ok || got != fn {
+			t.Errorf("parseToken(%q) = (%q, %v), want (%q, true)", token, got, ok, fn)
+		}
+	}
+}
+
+func TestParseToken_RejectsForgeries(t *testing.T) {
+	t.Parallel()
+	fn := validTestFn("forgery")
+	good := makeToken(testSignKey, fn)
+
+	// Wrong key — handler must not trust whatever the attacker sends.
+	if _, ok := parseToken([]byte("wrong-key"), good); ok {
+		t.Error("parseToken accepted token signed under a different key")
+	}
+
+	// Tamper with the sig portion.
+	tampered := good[:tokenLen-1] + "0"
+	if tampered == good {
+		tampered = good[:tokenLen-1] + "1"
+	}
+	if _, ok := parseToken(testSignKey, tampered); ok {
+		t.Errorf("parseToken accepted tampered sig: %q", tampered)
+	}
+
+	// Tamper with the fn portion (now the sig no longer matches).
+	swapFn := "b" + good[1:]
+	if swapFn == good {
+		swapFn = "c" + good[1:]
+	}
+	if _, ok := parseToken(testSignKey, swapFn); ok {
+		t.Errorf("parseToken accepted token with rewritten fn: %q", swapFn)
+	}
+
+	// Wrong length.
+	for _, bad := range []string{
+		"",
+		"short",
+		good + "x",
+		good[:tokenLen-1],
+		strings.Repeat("a", tokenLen),
+	} {
+		if _, ok := parseToken(testSignKey, bad); ok {
+			t.Errorf("parseToken accepted bad token %q", bad)
 		}
 	}
 }
