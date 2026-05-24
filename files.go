@@ -18,14 +18,20 @@ import (
 
 const fileMetaCacheTTL = 60 * time.Second
 
-// fileMeta is the file's row in the files table. Found is false when there
-// is no row for the fn — that happens when the metadata insert failed
-// during upload; we still serve the bucket bytes in that case rather than
-// 404'ing, since we have no expiration to enforce against.
+// fileMeta is the file's row in the files table plus a couple of derived
+// negative-cache flags. Found is false when there is no row for the fn —
+// that happens when the metadata insert failed during upload; we still
+// serve the bucket bytes in that case rather than 404'ing, since we have
+// no expiration to enforce against. BucketMissing is set by the file
+// handlers (not by lookupFile) after a confirmed Bucket.Attributes
+// NotFound, so subsequent requests within the cache TTL can return 404
+// without re-hitting GCS — that's what stops a DDoS against a dead-but-
+// valid-format fn from amplifying into a GCS read flood.
 type fileMeta struct {
-	ProjectID string
-	ExpiresAt time.Time
-	Found     bool
+	ProjectID     string
+	ExpiresAt     time.Time
+	Found         bool
+	BucketMissing bool
 }
 
 // Expired reports whether the file has a recorded expiry that is now in
@@ -35,8 +41,18 @@ func (m fileMeta) Expired() bool {
 	return m.Found && !m.ExpiresAt.IsZero() && m.ExpiresAt.Before(time.Now())
 }
 
+func fileCacheKey(fn string) string { return "fn|" + fn }
+
 func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 	fn := r.PathValue("fn")
+
+	// Reject obviously-invalid fns in CPU. A flood of random-garbage fns
+	// would otherwise miss the per-fn cache on every request (each key is
+	// unique) and burn one DB query + one GCS Class B op apiece.
+	if !isValidFilename(fn) {
+		http.NotFound(w, r)
+		return
+	}
 
 	// Check the DB *before* touching GCS so a DDoS against an expired fn
 	// is absorbed by the in-process cache (60s TTL on an immutable row)
@@ -49,10 +65,22 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file expired", http.StatusGone)
 		return
 	}
+	if meta.BucketMissing {
+		// Cached negative from a previous bucket NotFound — see the
+		// Attributes branch below.
+		http.NotFound(w, r)
+		return
+	}
 
 	attrs, err := a.Bucket.Attributes(r.Context(), fn)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
+			// Cache the negative so a flood against the same dead fn
+			// doesn't re-bill a Class B op per request. Safe even in the
+			// rare orphan case (Found=true, bucket gone): the file is
+			// unreachable either way until an operator cleans it up.
+			meta.BucketMissing = true
+			cachestore.Set(fileCacheKey(fn), meta, &cachestore.SetOptions{TTL: fileMetaCacheTTL})
 			http.NotFound(w, r)
 			return
 		}
@@ -83,16 +111,30 @@ func (a *App) fileHandler(w http.ResponseWriter, r *http.Request) {
 func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 	fn := r.PathValue("fn")
 
-	// Same DDoS-protection ordering as fileHandler: cached expired check
-	// first so the edge can't amplify into GCS by chasing an expired URL.
-	if lookupFile(r.Context(), fn).Expired() {
+	// Same DDoS-protection ladder as fileHandler: validate format, then
+	// consult the per-fn cache, then GCS. The edge would otherwise
+	// amplify a random-garbage flood or an expired-URL probe into one
+	// GCS op per request.
+	if !isValidFilename(fn) {
+		http.NotFound(w, r)
+		return
+	}
+
+	meta := lookupFile(r.Context(), fn)
+	if meta.Expired() {
 		http.Error(w, "file expired", http.StatusGone)
+		return
+	}
+	if meta.BucketMissing {
+		http.NotFound(w, r)
 		return
 	}
 
 	attrs, err := a.Bucket.Attributes(r.Context(), fn)
 	if err != nil {
 		if gcerrors.Code(err) == gcerrors.NotFound {
+			meta.BucketMissing = true
+			cachestore.Set(fileCacheKey(fn), meta, &cachestore.SetOptions{TTL: fileMetaCacheTTL})
 			http.NotFound(w, r)
 			return
 		}
@@ -144,7 +186,7 @@ func (a *App) streamFile(w http.ResponseWriter, r *http.Request, fn string, attr
 // needs to be short enough to absorb bursts on the same fn — not to track
 // any state that can change underneath us.
 func lookupFile(ctx context.Context, fn string) fileMeta {
-	cacheKey := "fn|" + fn
+	cacheKey := fileCacheKey(fn)
 	if v, ok := cachestore.Get[fileMeta](cacheKey); ok {
 		return v
 	}

@@ -23,6 +23,17 @@ func newTestBucket(t *testing.T) *blob.Bucket {
 	return bkt
 }
 
+// validTestFn returns an 86-char fn that passes isValidFilename, with
+// the descriptive suffix preserved so failing tests are still readable.
+// Distinct suffixes produce distinct fns, which keeps parallel tests
+// isolated in the in-process per-fn cache.
+func validTestFn(suffix string) string {
+	if len(suffix) > 86 {
+		panic("validTestFn: suffix too long: " + suffix)
+	}
+	return strings.Repeat("a", 86-len(suffix)) + suffix
+}
+
 func countObjects(t *testing.T, bkt *blob.Bucket) int {
 	t.Helper()
 	iter := bkt.List(nil)
@@ -458,6 +469,41 @@ func TestGenerateFilename(t *testing.T) {
 	for _, c := range a {
 		if c == '+' || c == '/' || c == '=' {
 			t.Errorf("filename contains non-URL-safe char %q: %s", c, a)
+		}
+	}
+}
+
+func TestIsValidFilename(t *testing.T) {
+	t.Parallel()
+	// Generated fns must always validate — this links the producer and
+	// the validator so a future change to either can't drift.
+	for i := 0; i < 16; i++ {
+		if fn := generateFilename(); !isValidFilename(fn) {
+			t.Errorf("generateFilename() = %q failed isValidFilename", fn)
+		}
+	}
+
+	good := strings.Repeat("a", 86)
+	cases := []struct {
+		fn   string
+		want bool
+	}{
+		{good, true},
+		{"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_abcdefghijklmnopqrstuv", true}, // 86 chars, full alphabet
+		{"", false},
+		{"short", false},
+		{strings.Repeat("a", 85), false},
+		{strings.Repeat("a", 87), false},
+		{strings.Repeat("a", 85) + "!", false}, // bad char
+		{strings.Repeat("a", 85) + "+", false}, // standard-base64 only
+		{strings.Repeat("a", 85) + "/", false},
+		{strings.Repeat("a", 85) + "=", false}, // padding not allowed by RawURLEncoding
+		{strings.Repeat("a", 85) + " ", false},
+		{strings.Repeat("a", 85) + ".", false},
+	}
+	for _, tc := range cases {
+		if got := isValidFilename(tc.fn); got != tc.want {
+			t.Errorf("isValidFilename(%q) = %v, want %v", tc.fn, got, tc.want)
 		}
 	}
 }

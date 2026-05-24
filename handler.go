@@ -124,6 +124,31 @@ func generateFilename() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
+// isValidFilename returns true iff fn matches what generateFilename
+// produces: 86 chars of URL-safe base64 (RawURLEncoding of 64 random
+// bytes, no padding). Anything else can't possibly exist in our system,
+// so the file handlers can 404 it in CPU and skip both the Postgres
+// query and the GCS Attributes call. That absorbs a flood of
+// random-garbage fns (which would otherwise miss the per-fn cache, since
+// every key is unique) at zero backend cost.
+func isValidFilename(fn string) bool {
+	if len(fn) != 86 {
+		return false
+	}
+	for i := 0; i < len(fn); i++ {
+		c := fn[i]
+		switch {
+		case c >= 'A' && c <= 'Z':
+		case c >= 'a' && c <= 'z':
+		case c >= '0' && c <= '9':
+		case c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func escapeFilename(s string) string {
 	return strings.ReplaceAll(s, `"`, "")
 }

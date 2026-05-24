@@ -16,7 +16,8 @@ func TestFileHandler_Success(t *testing.T) {
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
 
-	bw, err := bkt.NewWriter(t.Context(), "testfile", &blob.WriterOptions{
+	fn := validTestFn("testfile")
+	bw, err := bkt.NewWriter(t.Context(), fn, &blob.WriterOptions{
 		CacheControl:       "public, max-age=86400",
 		ContentDisposition: `attachment; filename="hello.txt"`,
 	})
@@ -30,9 +31,9 @@ func TestFileHandler_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/testfile", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", "testfile")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -58,9 +59,10 @@ func TestFileHandler_NotFound(t *testing.T) {
 	db := newTestDB(t)
 	app := newTestApp(newTestBucket(t), authorized)
 
-	r := httptest.NewRequest(http.MethodGet, "/files/doesnotexist", nil)
+	fn := validTestFn("notexist")
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", "doesnotexist")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -75,7 +77,8 @@ func TestFileHandler_RouteIntegration(t *testing.T) {
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
 
-	bw, err := bkt.NewWriter(t.Context(), "routefile", nil)
+	fn := validTestFn("routefile")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +87,7 @@ func TestFileHandler_RouteIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/routefile", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -100,7 +103,8 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 	bkt := newTestBucket(t)
 	app := newTestApp(bkt, authorized)
 
-	bw, err := bkt.NewWriter(t.Context(), "plain", nil)
+	fn := validTestFn("plain")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,9 +113,9 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/plain", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", "plain")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -199,7 +203,8 @@ func TestFileHandler_ExpiredReturnsGone(t *testing.T) {
 
 	// Object still in the bucket — GC hasn't run yet — but the DB row
 	// says it expired an hour ago.
-	bw, err := bkt.NewWriter(t.Context(), "expiredfile", nil)
+	fn := validTestFn("expiredfile")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,14 +216,14 @@ func TestFileHandler_ExpiredReturnsGone(t *testing.T) {
 	ctx := db.Ctx()
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ('expiredfile', 'proj-xyz', 11, 'x', 1, now() - interval '1 hour')
-	`); err != nil {
+		VALUES ($1, 'proj-xyz', 11, 'x', 1, now() - interval '1 hour')
+	`, fn); err != nil {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/expiredfile", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(ctx)
-	r.SetPathValue("fn", "expiredfile")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -240,17 +245,18 @@ func TestFileHandler_ExpiredSkipsBucket(t *testing.T) {
 	db := newTestDB(t)
 	app := newTestApp(newTestBucket(t), authorized)
 
+	fn := validTestFn("expiredghost")
 	ctx := db.Ctx()
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ('expiredghost', 'proj-xyz', 99, 'x', 1, now() - interval '1 hour')
-	`); err != nil {
+		VALUES ($1, 'proj-xyz', 99, 'x', 1, now() - interval '1 hour')
+	`, fn); err != nil {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/expiredghost", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(ctx)
-	r.SetPathValue("fn", "expiredghost")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -266,15 +272,16 @@ func TestCDNFileHandler_ExpiredSkipsBucket(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
+	fn := validTestFn("expiredghostcdn")
 	ctx := db.Ctx()
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ('expiredghostcdn', 'proj-xyz', 99, 'x', 1, now() - interval '1 hour')
-	`); err != nil {
+		VALUES ($1, 'proj-xyz', 99, 'x', 1, now() - interval '1 hour')
+	`, fn); err != nil {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/expiredghostcdn", nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -291,7 +298,8 @@ func TestFileHandler_ExpiredOverridesCDNRedirect(t *testing.T) {
 	app := newTestApp(bkt, authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	bw, err := bkt.NewWriter(t.Context(), "expiredcdn", nil)
+	fn := validTestFn("expiredcdn")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,14 +311,14 @@ func TestFileHandler_ExpiredOverridesCDNRedirect(t *testing.T) {
 	ctx := db.Ctx()
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ('expiredcdn', 'proj-xyz', 5, 'x', 1, now() - interval '1 hour')
-	`); err != nil {
+		VALUES ($1, 'proj-xyz', 5, 'x', 1, now() - interval '1 hour')
+	`, fn); err != nil {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/expiredcdn", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(ctx)
-	r.SetPathValue("fn", "expiredcdn")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
@@ -329,7 +337,8 @@ func TestCDNFileHandler_ExpiredReturnsGone(t *testing.T) {
 	app := newTestApp(bkt, authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	bw, err := bkt.NewWriter(t.Context(), "expiredorigin", nil)
+	fn := validTestFn("expiredorigin")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,12 +350,12 @@ func TestCDNFileHandler_ExpiredReturnsGone(t *testing.T) {
 	ctx := db.Ctx()
 	if _, err := pgctx.Exec(ctx, `
 		INSERT INTO files (fn, project_id, size, filename, ttl, expires_at)
-		VALUES ('expiredorigin', 'proj-xyz', 12, 'x', 1, now() - interval '1 hour')
-	`); err != nil {
+		VALUES ($1, 'proj-xyz', 12, 'x', 1, now() - interval '1 hour')
+	`, fn); err != nil {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/expiredorigin", nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
 	r = r.WithContext(ctx)
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -366,7 +375,8 @@ func TestFileHandler_CDNRedirect(t *testing.T) {
 	app := newTestApp(bkt, authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	bw, err := bkt.NewWriter(t.Context(), "cdnfile", nil)
+	fn := validTestFn("cdnfile")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,22 +385,22 @@ func TestFileHandler_CDNRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/cdnfile", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", "cdnfile")
+	r.SetPathValue("fn", fn)
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
 
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Fatalf("status = %d, want 307", w.Code)
 	}
-	if loc := w.Header().Get("Location"); loc != "https://cdn.example.com/cdnfile" {
-		t.Errorf("Location = %q, want https://cdn.example.com/cdnfile", loc)
+	if loc := w.Header().Get("Location"); loc != "https://cdn.example.com/"+fn {
+		t.Errorf("Location = %q, want https://cdn.example.com/%s", loc, fn)
 	}
-	if got := w.Body.Len(); got > 100 {
-		// the default redirect body is small ("<a href=...>"); we shouldn't
-		// be streaming the object.
-		t.Errorf("body length = %d, expected a short redirect body", got)
+	// The default http.Redirect body is `<a href=...>Temporary Redirect</a>` —
+	// it must not contain the object bytes.
+	if got := w.Body.String(); strings.Contains(got, "hello world") {
+		t.Errorf("body streamed the object instead of redirecting: %q", got)
 	}
 }
 
@@ -401,7 +411,8 @@ func TestFileHandler_CDNInternalClientStreams(t *testing.T) {
 	app := newTestApp(bkt, authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	bw, err := bkt.NewWriter(t.Context(), "internalfile", nil)
+	fn := validTestFn("internalfile")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,9 +421,9 @@ func TestFileHandler_CDNInternalClientStreams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/internalfile", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", "internalfile")
+	r.SetPathValue("fn", fn)
 	r.Header.Set("X-Real-Ip", "10.0.0.5") // private IP -> internal
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
@@ -432,7 +443,8 @@ func TestFileHandler_CDNRedirectPublicXRealIP(t *testing.T) {
 	app := newTestApp(bkt, authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	bw, err := bkt.NewWriter(t.Context(), "publicfile", nil)
+	fn := validTestFn("publicfile")
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,9 +453,9 @@ func TestFileHandler_CDNRedirectPublicXRealIP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/files/publicfile", nil)
+	r := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
 	r = r.WithContext(db.Ctx())
-	r.SetPathValue("fn", "publicfile")
+	r.SetPathValue("fn", fn)
 	r.Header.Set("X-Real-Ip", "203.0.113.5") // public IP -> CDN path
 	w := httptest.NewRecorder()
 	app.fileHandler(w, r)
@@ -460,7 +472,8 @@ func TestCDNFileHandler_Streams(t *testing.T) {
 	app := newTestApp(bkt, authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	bw, err := bkt.NewWriter(t.Context(), "origin", &blob.WriterOptions{
+	fn := validTestFn("origin")
+	bw, err := bkt.NewWriter(t.Context(), fn, &blob.WriterOptions{
 		CacheControl: "public, max-age=86400",
 	})
 	if err != nil {
@@ -471,7 +484,7 @@ func TestCDNFileHandler_Streams(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/origin", nil)
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
@@ -493,13 +506,141 @@ func TestCDNFileHandler_NotFound(t *testing.T) {
 	app := newTestApp(newTestBucket(t), authorized)
 	app.CDNBaseURL = "https://cdn.example.com/"
 
-	r := httptest.NewRequest(http.MethodGet, "/_cdn/nope", nil)
+	fn := validTestFn("cdnnope")
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
 	r = r.WithContext(db.Ctx())
 	w := httptest.NewRecorder()
 	app.routes().ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestFileHandler_InvalidFilenameRejected(t *testing.T) {
+	// Garbage fns should 404 from the validator without touching DB or
+	// GCS. We pass a nil-context request: if the validator ever stops
+	// short-circuiting, lookupFile will panic on the missing pgctx and
+	// blow the test up — which is the right failure mode for a
+	// regression that removes the DDoS shield.
+	t.Parallel()
+	app := newTestApp(newTestBucket(t), authorized)
+
+	cases := []string{
+		"",
+		"short",
+		"../../etc/passwd",
+		strings.Repeat("a", 85),                  // 1 short
+		strings.Repeat("a", 87),                  // 1 long
+		strings.Repeat("a", 85) + "!",            // bad char
+		strings.Repeat("a", 85) + "+",            // standard-base64 char, not URL-safe
+		strings.Repeat("a", 85) + "/",            // ditto
+	}
+	for _, fn := range cases {
+		t.Run("fn="+fn, func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequest(http.MethodGet, "/files/x", nil)
+			r.SetPathValue("fn", fn)
+			w := httptest.NewRecorder()
+			app.fileHandler(w, r)
+			if w.Code != http.StatusNotFound {
+				t.Errorf("fn=%q: status = %d, want 404", fn, w.Code)
+			}
+		})
+	}
+}
+
+func TestCDNFileHandler_InvalidFilenameRejected(t *testing.T) {
+	t.Parallel()
+	app := newTestApp(newTestBucket(t), authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/short", nil)
+	w := httptest.NewRecorder()
+	app.routes().ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestFileHandler_BucketMissNegativeCached(t *testing.T) {
+	// First request misses everywhere → 404 and caches BucketMissing.
+	// Then we write the object out-of-band into the bucket. The second
+	// request must still 404, proving Bucket.Attributes was not called
+	// — that's the DDoS protection for a flood against a known-bad fn
+	// (e.g. a URL the attacker held after expiry+GC).
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	fn := validTestFn("missneg")
+
+	r1 := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r1 = r1.WithContext(db.Ctx())
+	r1.SetPathValue("fn", fn)
+	w1 := httptest.NewRecorder()
+	app.fileHandler(w1, r1)
+	if w1.Code != http.StatusNotFound {
+		t.Fatalf("first request: status = %d, want 404", w1.Code)
+	}
+
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw.Write([]byte("late arrival"))
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r2 := httptest.NewRequest(http.MethodGet, "/files/"+fn, nil)
+	r2 = r2.WithContext(db.Ctx())
+	r2.SetPathValue("fn", fn)
+	w2 := httptest.NewRecorder()
+	app.fileHandler(w2, r2)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("second request: status = %d, want 404 (negative cache must mask the out-of-band write)", w2.Code)
+	}
+	if strings.Contains(w2.Body.String(), "late arrival") {
+		t.Errorf("body leaked out-of-band object: %q", w2.Body.String())
+	}
+}
+
+func TestCDNFileHandler_BucketMissNegativeCached(t *testing.T) {
+	// Same assertion for /_cdn/{fn}. The CDN origin needs the same
+	// shield since the edge can hammer it on cache misses.
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+	app.CDNBaseURL = "https://cdn.example.com/"
+
+	fn := validTestFn("missnegcdn")
+
+	r1 := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r1 = r1.WithContext(db.Ctx())
+	w1 := httptest.NewRecorder()
+	app.routes().ServeHTTP(w1, r1)
+	if w1.Code != http.StatusNotFound {
+		t.Fatalf("first request: status = %d, want 404", w1.Code)
+	}
+
+	bw, err := bkt.NewWriter(t.Context(), fn, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bw.Write([]byte("late arrival"))
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	r2 := httptest.NewRequest(http.MethodGet, "/_cdn/"+fn, nil)
+	r2 = r2.WithContext(db.Ctx())
+	w2 := httptest.NewRecorder()
+	app.routes().ServeHTTP(w2, r2)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("second request: status = %d, want 404 (negative cache must mask the out-of-band write)", w2.Code)
 	}
 }
 
