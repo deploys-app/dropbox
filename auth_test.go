@@ -238,7 +238,7 @@ func TestCheckAuth_SingleflightCollapsesConcurrentCalls(t *testing.T) {
 	results := make([]AuthResult, N)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
-	for i := 0; i < N; i++ {
+	for i := range N {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

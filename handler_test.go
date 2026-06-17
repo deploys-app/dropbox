@@ -523,7 +523,7 @@ func TestGenerateFilename_DistributionLooksUniform(t *testing.T) {
 	// once, which would fail catastrophically if a whole half of the
 	// alphabet got dropped (e.g. by an off-by-one in the reject bound).
 	counts := map[byte]int{}
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		for j := 0; j < len(generateFilename()); j++ {
 			counts[generateFilename()[j]]++
 		}
@@ -560,7 +560,7 @@ func TestSignFilename_KeyMatters(t *testing.T) {
 
 func TestParseToken_RoundTripsGeneratedToken(t *testing.T) {
 	t.Parallel()
-	for i := 0; i < 16; i++ {
+	for range 16 {
 		fn := generateFilename()
 		token := makeToken(testSignKey, fn)
 		if want := fnLen + 1 + sigLen; len(token) != want {

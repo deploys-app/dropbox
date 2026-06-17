@@ -196,7 +196,7 @@ func TestLookupFile_SingleflightCollapsesConcurrentCalls(t *testing.T) {
 	results := make([]fileMeta, N)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
-	for i := 0; i < N; i++ {
+	for i := range N {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -701,14 +701,14 @@ func TestFileHandler_InvalidTokenRejected(t *testing.T) {
 	forgedDiffKey := makeToken([]byte("not-the-real-key"), goodFn)
 
 	cases := map[string]string{
-		"empty":             "",
-		"short":             "short",
-		"path-traversal":    "../../etc/passwd",
-		"no-separator":      strings.Repeat("a", fnLen+sigLen),
-		"empty-fn":          tokenSep + signFilename(testSignKey, ""),
-		"empty-sig":         goodFn + tokenSep,
-		"tampered-sig":      tamperedSig,
-		"forged-other-key":  forgedDiffKey,
+		"empty":            "",
+		"short":            "short",
+		"path-traversal":   "../../etc/passwd",
+		"no-separator":     strings.Repeat("a", fnLen+sigLen),
+		"empty-fn":         tokenSep + signFilename(testSignKey, ""),
+		"empty-sig":        goodFn + tokenSep,
+		"tampered-sig":     tamperedSig,
+		"forged-other-key": forgedDiffKey,
 	}
 	for name, token := range cases {
 		t.Run(name, func(t *testing.T) {

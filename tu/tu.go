@@ -65,7 +65,10 @@ func Setup() *Context {
 }
 
 // CountFiles returns the number of rows in the files table.
-func (c *Context) CountFiles(t interface{ Helper(); Fatal(...any) }) int {
+func (c *Context) CountFiles(t interface {
+	Helper()
+	Fatal(...any)
+}) int {
 	t.Helper()
 	var n int
 	if err := c.DB.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM files`).Scan(&n); err != nil {
