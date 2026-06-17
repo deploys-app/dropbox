@@ -177,10 +177,7 @@ func (a *App) cdnFileHandler(w http.ResponseWriter, r *http.Request) {
 	// doesn't overwrite it. If we have no expires_at to work from
 	// (insert-failed upload), fall through to the bucket's value.
 	if !meta.ExpiresAt.IsZero() {
-		remaining := time.Until(meta.ExpiresAt)
-		if remaining < 0 {
-			remaining = 0
-		}
+		remaining := max(time.Until(meta.ExpiresAt), 0)
 		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d, immutable", int(remaining.Seconds())))
 	}
 
