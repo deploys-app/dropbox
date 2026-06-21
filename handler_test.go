@@ -494,6 +494,36 @@ func TestUpload_ProjectIDParamRouting(t *testing.T) {
 	}
 }
 
+func TestUpload_ProjectParamRouting(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	var gotProject, gotProjectID string
+	authFn := func(_ context.Context, _, project, projectID string) AuthResult {
+		gotProject, gotProjectID = project, projectID
+		return AuthResult{Authorized: true, Project: Project{ID: "proj-1"}}
+	}
+	app := newTestApp(newTestBucket(t), authFn)
+
+	// ?project= carries the project sid; it must reach auth as `project`
+	// (me.authorized resolves it by sid) and must not be confused with the
+	// numeric `projectId`.
+	body := strings.NewReader("data")
+	r := httptest.NewRequest(http.MethodPost, "/?project=acme-sid", body)
+	r = r.WithContext(db.Ctx())
+	r.ContentLength = 4
+	r.Header.Set("param-project-id", "id-from-header")
+	w := httptest.NewRecorder()
+	app.uploadHandler(w, r)
+
+	if gotProject != "acme-sid" {
+		t.Errorf("project passed to auth = %q, want acme-sid", gotProject)
+	}
+	if gotProjectID != "id-from-header" {
+		t.Errorf("projectId passed to auth = %q, want id-from-header (header fallback)", gotProjectID)
+	}
+}
+
 func TestGenerateFilename(t *testing.T) {
 	t.Parallel()
 	a, b := generateFilename(), generateFilename()
