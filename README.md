@@ -50,7 +50,7 @@ Endpoint: https://dropbox.deploys.app/
 |-----------------|----------|-----------|---------------------------------|
 | Authorization   | required | string    | Authorization token             |
 | Param-Ttl       | optional | number    | 1-7, default 1                  |
-| Param-Project   | required | string    | Project name                    |
+| Param-Project   | required | string    | Project sid (stable slug) or numeric project ID |
 | Param-Filename  | optional | string    | Filename in Content-Disposition |
 
 #### Query Parameters
@@ -58,8 +58,8 @@ Endpoint: https://dropbox.deploys.app/
 | Name       | Type     | Data Type | Description                     |
 |------------|----------|-----------|---------------------------------|
 | ttl        | optional | number    | 1-7, default 1                  |
-| project    | required | string    | Project name                    |
-| projectId  | optional | string    | Project ID (alternative to project name) |
+| project    | required | string    | Project sid (stable slug) **or** numeric project ID — an all-digit value is treated as the ID |
+| projectId  | optional | string    | Numeric project ID (same as passing a numeric `project`) |
 | filename   | optional | string    | Filename in Content-Disposition |
 
 > Query parameters take precedence over headers when both are provided.

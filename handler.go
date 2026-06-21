@@ -53,6 +53,15 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	project := firstNonEmpty(r.URL.Query().Get("project"), r.Header.Get("param-project"))
 	projectID := firstNonEmpty(r.URL.Query().Get("projectId"), r.Header.Get("param-project-id"))
 
+	// `project` accepts either a sid or a numeric project ID. A project sid
+	// always starts with a letter (api ReValidSID: `^[a-z][a-z0-9\-]*[^\-]$`),
+	// so an all-digit value is unambiguously a numeric ID — route it to
+	// projectID, which me.authorized resolves by ID (a sid lookup would fail).
+	// An explicit ?projectId= still wins.
+	if projectID == "" && isAllDigits(project) {
+		projectID, project = project, ""
+	}
+
 	authResult := a.auth(r.Context(), auth, project, projectID)
 	if !authResult.Authorized {
 		jsonFail(w, "api: unauthorized", http.StatusOK)
@@ -220,6 +229,21 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// isAllDigits reports whether s is non-empty and made up solely of ASCII
+// digits. It distinguishes a numeric project ID from a project sid: sids
+// always start with a letter, so they can never be all-digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // isInternalClient returns true when the request originates from a
