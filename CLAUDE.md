@@ -35,7 +35,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 - `fn` is what we store in the bucket and the `files.fn` column. The full token is also persisted in `files.token` so the api's `dropbox.List` can rebuild download URLs without holding `sign_key`; it's otherwise only meaningful in URLs.
 
 **Request flow (`handler.go`):**
-1. Parse `Authorization` header + `project`/`projectId` from query params or `param-*` headers (query params take precedence). `project` is the project **sid** (stable slug, e.g. `my-project`) — this is the canonical identifier and what every caller passes; `projectId` is the **numeric** project ID. Both are relayed to `me.authorized`, which resolves `project` by sid and requires `projectId` to be numeric, so a sid must go in `project`.
+1. Parse `Authorization` header + `project`/`projectId` from query params or `param-*` headers (query params take precedence). `project` accepts **either** a project **sid** (stable slug, e.g. `my-project`) **or** a numeric project ID; `projectId` is always the numeric ID. Because a sid always starts with a letter (api `ReValidSID`: `^[a-z][a-z0-9\-]*[^\-]$`), an all-digit `project` is unambiguously an ID, so `uploadHandler` routes it to `projectID` (an explicit `projectId` still wins). Both are relayed to `me.authorized`, which resolves `project` by sid and `projectId` by numeric ID.
 2. Authorize via `checkAuth()` in `auth.go`
 3. Parse TTL (1–7 days, default 1) and optional filename the same way
 4. Generate a 24-char alphanumeric `fn` (`generateFilename`, rejection-sampled to stay unbiased)

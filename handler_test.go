@@ -524,6 +524,84 @@ func TestUpload_ProjectParamRouting(t *testing.T) {
 	}
 }
 
+func TestUpload_ProjectNumericRoutesToID(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	var gotProject, gotProjectID string
+	authFn := func(_ context.Context, _, project, projectID string) AuthResult {
+		gotProject, gotProjectID = project, projectID
+		return AuthResult{Authorized: true, Project: Project{ID: "proj-1"}}
+	}
+	app := newTestApp(newTestBucket(t), authFn)
+
+	// An all-digit ?project= is a numeric project ID, not a sid (sids start
+	// with a letter), so it must reach auth as projectID, leaving project empty.
+	body := strings.NewReader("data")
+	r := httptest.NewRequest(http.MethodPost, "/?project=12345", body)
+	r = r.WithContext(db.Ctx())
+	r.ContentLength = 4
+	w := httptest.NewRecorder()
+	app.uploadHandler(w, r)
+
+	if gotProjectID != "12345" {
+		t.Errorf("projectId passed to auth = %q, want 12345", gotProjectID)
+	}
+	if gotProject != "" {
+		t.Errorf("project passed to auth = %q, want empty (numeric routed to projectId)", gotProject)
+	}
+}
+
+func TestUpload_ExplicitProjectIDWinsOverNumericProject(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+
+	var gotProject, gotProjectID string
+	authFn := func(_ context.Context, _, project, projectID string) AuthResult {
+		gotProject, gotProjectID = project, projectID
+		return AuthResult{Authorized: true, Project: Project{ID: "proj-1"}}
+	}
+	app := newTestApp(newTestBucket(t), authFn)
+
+	// An explicit ?projectId= must not be clobbered by the numeric-project
+	// shortcut; project is left as-is (me.authorized prioritizes projectId).
+	body := strings.NewReader("data")
+	r := httptest.NewRequest(http.MethodPost, "/?project=999&projectId=42", body)
+	r = r.WithContext(db.Ctx())
+	r.ContentLength = 4
+	w := httptest.NewRecorder()
+	app.uploadHandler(w, r)
+
+	if gotProjectID != "42" {
+		t.Errorf("projectId passed to auth = %q, want 42 (explicit wins)", gotProjectID)
+	}
+	if gotProject != "999" {
+		t.Errorf("project passed to auth = %q, want 999 (left untouched)", gotProject)
+	}
+}
+
+func TestIsAllDigits(t *testing.T) {
+	t.Parallel()
+	cases := map[string]bool{
+		"":           false,
+		"12345":      true,
+		"0":          true,
+		"acme":       false,
+		"acme-prod":  false,
+		"12a":        false,
+		"a123":       false,
+		" 12":        false,
+		"12 ":        false,
+		"-1":         false,
+		"1.0":        false,
+	}
+	for in, want := range cases {
+		if got := isAllDigits(in); got != want {
+			t.Errorf("isAllDigits(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
 func TestGenerateFilename(t *testing.T) {
 	t.Parallel()
 	a, b := generateFilename(), generateFilename()
