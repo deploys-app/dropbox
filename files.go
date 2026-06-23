@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -188,22 +187,18 @@ func setDeadCacheControl(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", int(cdnDeadResponseTTL.Seconds())))
 }
 
-// streamFile copies the object body to w with the cached headers. When
-// projectID is non-empty, download_count and egress_bytes are bumped by
-// the actual transferred bytes. Used by both the direct-stream path
-// (no CDN configured) and the unauthenticated _cdn origin path.
+// streamFile writes the object body to w, honoring HTTP Range requests.
+// The object is handed to http.ServeContent as a lazy io.ReadSeeker
+// (blobReadSeeker) so a range request reads only the requested span from
+// the bucket instead of the whole object; ServeContent emits 206 +
+// Content-Range + Accept-Ranges (or 416 on an unsatisfiable range) and the
+// matching Content-Length, and also handles conditional (If-Range /
+// If-Modified-Since) requests against the object's mod time. When projectID
+// is non-empty, download_count is bumped once per request and egress_bytes
+// by the bytes actually written to the client (a range serves fewer than
+// attrs.Size). Used by both the direct-stream path (no CDN configured) and
+// the unauthenticated _cdn origin path.
 func (a *App) streamFile(w http.ResponseWriter, r *http.Request, fn string, attrs *blob.Attributes, projectID string) {
-	reader, err := a.Bucket.NewReader(r.Context(), fn, nil)
-	if err != nil {
-		if gcerrors.Code(err) == gcerrors.NotFound {
-			http.NotFound(w, r)
-			return
-		}
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-	defer reader.Close()
-
 	// Only fall back to the bucket's CacheControl if the caller hasn't
 	// already chosen one. cdnFileHandler pre-sets a TTL-aligned policy;
 	// the non-CDN fileHandler leaves it unset and gets the bucket value.
@@ -213,18 +208,117 @@ func (a *App) streamFile(w http.ResponseWriter, r *http.Request, fn string, attr
 	if attrs.ContentDisposition != "" {
 		w.Header().Set("Content-Disposition", attrs.ContentDisposition)
 	}
+	// Set Content-Type up front so ServeContent uses it verbatim instead of
+	// sniffing (a sniff would cost an extra range read at offset 0). With no
+	// stored type, ServeContent falls back to sniffing the first 512 bytes.
 	if attrs.ContentType != "" {
 		w.Header().Set("Content-Type", attrs.ContentType)
 	}
-	w.Header().Set("Content-Length", strconv.FormatInt(attrs.Size, 10))
 
+	rs := &blobReadSeeker{ctx: r.Context(), bucket: a.Bucket, key: fn, size: attrs.Size}
+	defer rs.Close()
+
+	dst := w
+	var counter *countingResponseWriter
 	if projectID != "" {
 		downloadCount.WithLabelValues(projectID).Inc()
+		counter = &countingResponseWriter{ResponseWriter: w}
+		dst = counter
 	}
-	n, _ := io.Copy(w, reader)
-	if projectID != "" {
-		egressBytes.WithLabelValues(projectID).Add(float64(n))
+
+	// ServeContent parses Range/If-Range and conditional headers, then
+	// streams via rs (which opens a GCS range reader lazily at the requested
+	// offset). name is "" — fn carries no meaningful extension and the
+	// Content-Type is already chosen above.
+	http.ServeContent(dst, r, "", attrs.ModTime, rs)
+
+	if counter != nil {
+		egressBytes.WithLabelValues(projectID).Add(float64(counter.n))
 	}
+}
+
+// blobReadSeeker adapts a GCS object into an io.ReadSeeker backed by lazy
+// range reads, so http.ServeContent can satisfy a Range request by reading
+// only the requested span instead of the whole object. Seeks are pure
+// arithmetic against the known size; the underlying bucket reader is opened
+// (and reopened after a discontiguous seek) lazily on the next Read. Not
+// safe for concurrent use — one per request, which is how ServeContent
+// drives it.
+type blobReadSeeker struct {
+	ctx    context.Context
+	bucket *blob.Bucket
+	key    string
+	size   int64
+
+	offset int64         // virtual cursor: next byte the caller will read
+	rc     io.ReadCloser // current bucket reader, nil until first Read
+	rcAt   int64         // absolute offset of rc's next byte; valid when rc != nil
+}
+
+func (b *blobReadSeeker) Read(p []byte) (int, error) {
+	if b.offset >= b.size {
+		return 0, io.EOF
+	}
+	// (Re)open the bucket reader when we have none, or the cursor has moved
+	// away from where the open reader is positioned (after a Seek).
+	if b.rc == nil || b.rcAt != b.offset {
+		if b.rc != nil {
+			b.rc.Close()
+			b.rc = nil
+		}
+		rc, err := b.bucket.NewRangeReader(b.ctx, b.key, b.offset, -1, nil)
+		if err != nil {
+			return 0, err
+		}
+		b.rc = rc
+		b.rcAt = b.offset
+	}
+	n, err := b.rc.Read(p)
+	b.offset += int64(n)
+	b.rcAt += int64(n)
+	return n, err
+}
+
+func (b *blobReadSeeker) Seek(offset int64, whence int) (int64, error) {
+	var abs int64
+	switch whence {
+	case io.SeekStart:
+		abs = offset
+	case io.SeekCurrent:
+		abs = b.offset + offset
+	case io.SeekEnd:
+		abs = b.size + offset
+	default:
+		return 0, errors.New("blobReadSeeker: invalid whence")
+	}
+	if abs < 0 {
+		return 0, errors.New("blobReadSeeker: negative position")
+	}
+	b.offset = abs
+	return abs, nil
+}
+
+func (b *blobReadSeeker) Close() error {
+	if b.rc == nil {
+		return nil
+	}
+	err := b.rc.Close()
+	b.rc = nil
+	return err
+}
+
+// countingResponseWriter tallies bytes written to the response body so
+// streamFile can bill egress for the bytes actually sent — a Range response
+// transfers fewer than attrs.Size.
+type countingResponseWriter struct {
+	http.ResponseWriter
+	n int64
+}
+
+func (c *countingResponseWriter) Write(p []byte) (int, error) {
+	n, err := c.ResponseWriter.Write(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // lookupFile fetches the file's project owner and expiration from the DB.

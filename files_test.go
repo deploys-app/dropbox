@@ -132,6 +132,104 @@ func TestFileHandler_NoHeadersWhenAttrsEmpty(t *testing.T) {
 	}
 }
 
+// TestFileHandler_Range exercises streamFile's http.ServeContent range
+// handling across the common forms: prefix, mid, open-ended, suffix, full
+// (no Range), and an unsatisfiable range. The shared db/bucket/app are safe
+// because the subtests run sequentially and each writes a distinct fn.
+func TestFileHandler_Range(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	const body = "hello world" // 11 bytes
+
+	cases := []struct {
+		name       string
+		rangeHdr   string
+		wantStatus int
+		wantBody   string
+		wantCR     string // expected Content-Range ("" = don't check)
+		wantCL     string // expected Content-Length ("" = don't check)
+	}{
+		{"prefix", "bytes=0-4", http.StatusPartialContent, "hello", "bytes 0-4/11", "5"},
+		{"middle", "bytes=6-8", http.StatusPartialContent, "wor", "bytes 6-8/11", "3"},
+		{"openEnded", "bytes=6-", http.StatusPartialContent, "world", "bytes 6-10/11", "5"},
+		{"suffix", "bytes=-5", http.StatusPartialContent, "world", "bytes 6-10/11", "5"},
+		{"full", "", http.StatusOK, body, "", "11"},
+		{"unsatisfiable", "bytes=100-200", http.StatusRequestedRangeNotSatisfiable, "", "bytes */11", ""},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fn := validTestFn(fmt.Sprintf("rng%d", i))
+			writeObject(t, bkt, fn, "text/plain", []byte(body))
+
+			r := httptest.NewRequest(http.MethodGet, "/files/"+signedToken(fn), nil)
+			r = r.WithContext(db.Ctx())
+			r.SetPathValue("token", signedToken(fn))
+			if tc.rangeHdr != "" {
+				r.Header.Set("Range", tc.rangeHdr)
+			}
+			w := httptest.NewRecorder()
+			app.fileHandler(w, r)
+
+			if w.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", w.Code, tc.wantStatus)
+			}
+			if tc.wantBody != "" && w.Body.String() != tc.wantBody {
+				t.Errorf("body = %q, want %q", w.Body.String(), tc.wantBody)
+			}
+			if tc.wantCR != "" {
+				if cr := w.Header().Get("Content-Range"); cr != tc.wantCR {
+					t.Errorf("Content-Range = %q, want %q", cr, tc.wantCR)
+				}
+			}
+			if tc.wantCL != "" {
+				if cl := w.Header().Get("Content-Length"); cl != tc.wantCL {
+					t.Errorf("Content-Length = %q, want %q", cl, tc.wantCL)
+				}
+			}
+			// Both 200 and 206 advertise range support; ServeContent omits
+			// Accept-Ranges only on the 416.
+			if tc.wantStatus != http.StatusRequestedRangeNotSatisfiable {
+				if ar := w.Header().Get("Accept-Ranges"); ar != "bytes" {
+					t.Errorf("Accept-Ranges = %q, want bytes", ar)
+				}
+			}
+		})
+	}
+}
+
+// TestCDNFileHandler_Range confirms range support is also live on the
+// unauthenticated _cdn origin path the CDN edge fetches from.
+func TestCDNFileHandler_Range(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	fn := validTestFn("cdnrng")
+	writeObject(t, bkt, fn, "text/plain", []byte("hello world"))
+
+	r := httptest.NewRequest(http.MethodGet, "/_cdn/"+signedToken(fn), nil)
+	r = r.WithContext(db.Ctx())
+	r.SetPathValue("token", signedToken(fn))
+	r.Header.Set("Range", "bytes=6-")
+	w := httptest.NewRecorder()
+	app.cdnFileHandler(w, r)
+
+	if w.Code != http.StatusPartialContent {
+		t.Fatalf("status = %d, want 206", w.Code)
+	}
+	if got := w.Body.String(); got != "world" {
+		t.Errorf("body = %q, want %q", got, "world")
+	}
+	if cr := w.Header().Get("Content-Range"); cr != "bytes 6-10/11" {
+		t.Errorf("Content-Range = %q, want %q", cr, "bytes 6-10/11")
+	}
+}
+
 func TestLookupFile_FromDB(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
