@@ -23,6 +23,22 @@ func newTestBucket(t *testing.T) *blob.Bucket {
 	return bkt
 }
 
+// writeObject stores body under fn in bkt with the given content type
+// (pass "" for none). Mirrors what uploadHandler writes, minus metadata.
+func writeObject(t *testing.T, bkt *blob.Bucket, fn, contentType string, body []byte) {
+	t.Helper()
+	bw, err := bkt.NewWriter(t.Context(), fn, &blob.WriterOptions{ContentType: contentType})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := bw.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // validTestFn returns an fnLen-char fn drawn from fnAlphabet, with the
 // descriptive suffix preserved so failing tests are still readable.
 // Distinct suffixes produce distinct fns, which keeps parallel tests

@@ -65,3 +65,4 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 
 - `schema.sql` targets PostgreSQL; `project_id` is `text` (the API returns string IDs)
 - `base_url` is the public download prefix (`https://dropbox.deploys.app/files/`); it shares the service host and resolves to the `GET /files/{token}` route, which streams directly or 307s to the CDN (see `cdn_base_url`)
+- `streamFile` (`files.go`) serves via `http.ServeContent` over `blobReadSeeker`, a lazy `io.ReadSeeker` backed by `Bucket.NewRangeReader`. This gives HTTP `Range` support (`206` + `Content-Range` + `Accept-Ranges`, `416` on an unsatisfiable range) and conditional GETs (`Last-Modified` / `If-Range`) while reading only the requested span from GCS — a range request never reads the whole object, and `HEAD` reads nothing. Egress is billed for the bytes actually written (a `countingResponseWriter`), not `attrs.Size`.
