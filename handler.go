@@ -27,7 +27,10 @@ type App struct {
 	CDNBaseURL     string
 	InternalSecret string
 	SignKey        []byte
-	checkAuth      func(ctx context.Context, auth, project, projectID string) AuthResult
+	// MaxUploadSize caps the maxSize a signed-upload URL will accept (bytes).
+	// Zero falls back to defaultMaxUploadSize.
+	MaxUploadSize int64
+	checkAuth     func(ctx context.Context, auth, project, projectID string) AuthResult
 }
 
 func (a *App) routes() http.Handler {
@@ -36,6 +39,8 @@ func (a *App) routes() http.Handler {
 		w.Write([]byte("Deploys.app Dropbox Service"))
 	})
 	mux.HandleFunc("POST /{$}", a.uploadHandler)
+	mux.HandleFunc("POST /uploads", a.uploadURLHandler)
+	mux.HandleFunc("PUT /uploads/{token}", a.uploadDirectHandler)
 	mux.HandleFunc("GET /files/{token}", a.fileHandler)
 	mux.HandleFunc("GET /_cdn/{token}", a.cdnFileHandler)
 	mux.HandleFunc("POST /internal/gc", a.gcHandler)

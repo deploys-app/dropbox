@@ -65,6 +65,9 @@ func main() {
 		// Required — rotating it invalidates all outstanding URLs (which
 		// is the right behavior if a key ever leaks).
 		SignKey: []byte(config.MustString("sign_key")),
+		// max_upload_size caps the maxSize a signed-upload URL will accept
+		// (bytes). Unset/<=0 falls back to defaultMaxUploadSize.
+		MaxUploadSize: config.Int64Default("max_upload_size", 0),
 	}
 
 	promAddr := config.StringDefault("prom_addr", ":9187")
