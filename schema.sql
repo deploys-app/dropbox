@@ -10,3 +10,4 @@ create table files (
 );
 create index files_project_id_created_at_idx on files (project_id, created_at);
 create index files_expires_at_idx on files (expires_at);
+create unique index files_fn_key on files (fn);
