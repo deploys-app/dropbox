@@ -107,10 +107,15 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 		// Close finalizes whatever bytes already streamed, so a mid-stream
 		// failure can leave a partial (or 0-byte) object behind with no DB row.
 		// Remove it for the same reason as the empty-upload case below — GC is
-		// DB-driven and would never reclaim a rowless object.
-		if derr := a.Bucket.Delete(r.Context(), fn); derr != nil && gcerrors.Code(derr) != gcerrors.NotFound {
+		// DB-driven and would never reclaim a rowless object. Delete on a
+		// cancellation-detached context: a copy error is usually a client
+		// disconnect, which already canceled r.Context(), and reusing it here
+		// would fail the cleanup and leak the partial object.
+		delCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+		if derr := a.Bucket.Delete(delCtx, fn); derr != nil && gcerrors.Code(derr) != gcerrors.NotFound {
 			slog.Error("delete partial upload", "fn", fn, "error", derr)
 		}
+		cancel()
 		slog.Error("upload file", "error", err)
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
 		return
