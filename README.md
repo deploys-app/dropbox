@@ -66,7 +66,9 @@ Endpoint: https://dropbox.deploys.app/
 
 #### Body
 
-File data binary
+File data binary. The body must be non-empty — an upload that carries zero
+bytes (including a chunked / unknown-length request that turns out to be empty)
+is rejected with `body empty` and stores nothing.
 
 #### Responses
 

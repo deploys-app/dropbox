@@ -18,6 +18,7 @@ import (
 
 	"github.com/acoshift/pgsql/pgctx"
 	"gocloud.dev/blob"
+	"gocloud.dev/gcerrors"
 )
 
 type App struct {
@@ -103,6 +104,13 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	n, err := io.Copy(bw, r.Body)
 	if err != nil {
 		_ = bw.Close()
+		// Close finalizes whatever bytes already streamed, so a mid-stream
+		// failure can leave a partial (or 0-byte) object behind with no DB row.
+		// Remove it for the same reason as the empty-upload case below — GC is
+		// DB-driven and would never reclaim a rowless object.
+		if derr := a.Bucket.Delete(r.Context(), fn); derr != nil && gcerrors.Code(derr) != gcerrors.NotFound {
+			slog.Error("delete partial upload", "fn", fn, "error", derr)
+		}
 		slog.Error("upload file", "error", err)
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
 		return
@@ -110,6 +118,21 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	if err := bw.Close(); err != nil {
 		slog.Error("finalize upload", "error", err)
 		jsonFail(w, "failed to upload", http.StatusInternalServerError)
+		return
+	}
+
+	// Reject empty uploads. The r.ContentLength == 0 guard above rejects the
+	// common case up front, but a request with an unknown length (chunked
+	// transfer encoding, ContentLength == -1) can still carry an empty body —
+	// that only becomes apparent after io.Copy reports n == 0. Storing a
+	// 0-byte object serves no one and would linger in the bucket, so delete
+	// the object we just finalized and bail before writing any DB row (GC is
+	// DB-driven and would never reclaim a bucket object with no row).
+	if n == 0 {
+		if err := a.Bucket.Delete(r.Context(), fn); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
+			slog.Error("delete empty upload", "fn", fn, "error", err)
+		}
+		jsonFail(w, "body empty", http.StatusOK)
 		return
 	}
 
