@@ -199,6 +199,65 @@ func TestUpload_NilBody(t *testing.T) {
 	}
 }
 
+func TestUpload_EmptyChunkedBody(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	// ContentLength == -1 mimics a chunked / unknown-length request: the early
+	// r.ContentLength == 0 guard does not fire, so emptiness is only detected
+	// after io.Copy streams zero bytes. The handler must still reject it and
+	// leave nothing behind — no bucket object, no DB row.
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(""))
+	r = r.WithContext(db.Ctx())
+	r.ContentLength = -1
+	w := httptest.NewRecorder()
+	app.uploadHandler(w, r)
+
+	var resp failResp
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.OK {
+		t.Error("expected ok=false for empty chunked body")
+	}
+	if resp.Error.Message != "body empty" {
+		t.Errorf("message = %q, want body empty", resp.Error.Message)
+	}
+	if n := countObjects(t, bkt); n != 0 {
+		t.Errorf("bucket objects = %d, want 0 (empty upload must not leave an object)", n)
+	}
+	if n := db.CountFiles(t); n != 0 {
+		t.Errorf("db files = %d, want 0 (empty upload must not write a row)", n)
+	}
+}
+
+func TestUpload_ChunkedNonEmptyBodySucceeds(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	// The same unknown-length path must still accept a non-empty body: the
+	// n == 0 guard keys off bytes actually streamed, not ContentLength.
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("hello"))
+	r = r.WithContext(db.Ctx())
+	r.ContentLength = -1
+	w := httptest.NewRecorder()
+	app.uploadHandler(w, r)
+
+	var resp uploadResp
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !resp.OK {
+		t.Fatal("expected ok=true for non-empty chunked body")
+	}
+	if n := countObjects(t, bkt); n != 1 {
+		t.Errorf("bucket objects = %d, want 1", n)
+	}
+	if n := db.CountFiles(t); n != 1 {
+		t.Errorf("db files = %d, want 1", n)
+	}
+}
+
 func TestUpload_Success(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
