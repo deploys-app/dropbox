@@ -137,11 +137,13 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 	// that only becomes apparent after io.Copy reports n == 0. Storing a
 	// 0-byte object serves no one and would linger in the bucket, so delete
 	// the object we just finalized and bail before writing any DB row (GC is
-	// DB-driven and would never reclaim a bucket object with no row).
+	// DB-driven and would never reclaim a bucket object with no row). Use
+	// deleteObject, which detaches from r.Context(): a client that disconnects
+	// right after the empty body cancels r.Context(), and reusing it here would
+	// fail the cleanup and strand the rowless object (same reason as the
+	// mid-stream error path above).
 	if n == 0 {
-		if err := a.Bucket.Delete(r.Context(), fn); err != nil && gcerrors.Code(err) != gcerrors.NotFound {
-			slog.Error("delete empty upload", "fn", fn, "error", err)
-		}
+		a.deleteObject(r, fn)
 		jsonFail(w, "body empty", http.StatusOK)
 		return
 	}
