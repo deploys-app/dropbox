@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -259,9 +260,18 @@ func (a *App) uploadDirectHandler(w http.ResponseWriter, r *http.Request) {
 		jsonFail(w, "upload url expired", http.StatusOK)
 		return
 	}
-	if g.ContentType != "" && r.Header.Get("Content-Type") != g.ContentType {
-		jsonFail(w, "content type mismatch", http.StatusOK)
-		return
+	if g.ContentType != "" {
+		// Compare only the media type (type/subtype), ignoring parameters such as
+		// charset/boundary per RFC 7231 §3.1.1.1: a client sending
+		// "application/json; charset=utf-8" against a grant for "application/json"
+		// is the same media type. ParseMediaType also lowercases, so the match is
+		// case-insensitive; a malformed/empty header parses to "" and is rejected.
+		got, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		want, _, _ := mime.ParseMediaType(g.ContentType)
+		if got != want {
+			jsonFail(w, "content type mismatch", http.StatusOK)
+			return
+		}
 	}
 	if r.Body == nil {
 		jsonFail(w, "body empty", http.StatusOK)
