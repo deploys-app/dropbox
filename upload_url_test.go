@@ -470,6 +470,29 @@ func TestUploadDirect_ContentTypeMismatch(t *testing.T) {
 	}
 }
 
+// TestUploadDirect_ContentTypeAllowsParams guards that a charset/boundary
+// parameter on the granted media type is accepted — the content-type check
+// compares media types (type/subtype) only, not the raw header.
+func TestUploadDirect_ContentTypeAllowsParams(t *testing.T) {
+	t.Parallel()
+	db := newTestDB(t)
+	bkt := newTestBucket(t)
+	app := newTestApp(bkt, authorized)
+
+	resp := issueUploadURL(t, app, db, uploadURLRequest{Project: "p", ContentType: "application/pdf", MaxSize: 100})
+	token := uploadTokenOf(t, resp.Result.UploadURL)
+
+	w := doPut(t, app, db, token, "application/pdf; charset=utf-8", "data")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", w.Code, w.Body.String())
+	}
+	var pr putResp
+	json.NewDecoder(w.Body).Decode(&pr)
+	if !pr.OK {
+		t.Fatalf("expected ok=true (charset param on granted media type accepted), got %s", w.Body.String())
+	}
+}
+
 func TestUploadDirect_InvalidToken(t *testing.T) {
 	t.Parallel()
 	db := newTestDB(t)
