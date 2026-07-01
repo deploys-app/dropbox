@@ -38,7 +38,7 @@ Standard Go HTTP server (not Cloudflare Workers) serving as a temporary file upl
 **Request flow (`handler.go`):**
 1. Parse `Authorization` header + `project`/`projectId` from query params or `param-*` headers (query params take precedence). `project` accepts **either** a project **sid** (stable slug, e.g. `my-project`) **or** a numeric project ID; `projectId` is always the numeric ID. Because a sid always starts with a letter (api `ReValidSID`: `^[a-z][a-z0-9\-]*[^\-]$`), an all-digit `project` is unambiguously an ID, so `uploadHandler` routes it to `projectID` (an explicit `projectId` still wins). Both are relayed to `me.authorized`, which resolves `project` by sid and `projectId` by numeric ID.
 2. Authorize via `checkAuth()` in `auth.go`
-3. Parse TTL (1–7 days, default 1) and optional filename the same way
+3. Parse TTL (1–365 days, default 1) and optional filename the same way
 4. Generate a 24-char alphanumeric `fn` (`generateFilename`, rejection-sampled to stay unbiased)
 5. Stream body to GCS with cache-control and optional content-disposition, keyed by `fn`
 6. Insert metadata into PostgreSQL via `pgctx.Exec`

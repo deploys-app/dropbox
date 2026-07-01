@@ -323,7 +323,9 @@ func TestUpload_TTL(t *testing.T) {
 		{"1", 1},
 		{"3", 3},
 		{"7", 7},
-		{"8", 1},
+		{"8", 8},
+		{"365", 365},
+		{"366", 1},
 		{"-1", 1},
 		{"abc", 1},
 		{"", 1},
@@ -658,17 +660,17 @@ func TestUpload_ExplicitProjectIDWinsOverNumericProject(t *testing.T) {
 func TestIsAllDigits(t *testing.T) {
 	t.Parallel()
 	cases := map[string]bool{
-		"":           false,
-		"12345":      true,
-		"0":          true,
-		"acme":       false,
-		"acme-prod":  false,
-		"12a":        false,
-		"a123":       false,
-		" 12":        false,
-		"12 ":        false,
-		"-1":         false,
-		"1.0":        false,
+		"":          false,
+		"12345":     true,
+		"0":         true,
+		"acme":      false,
+		"acme-prod": false,
+		"12a":       false,
+		"a123":      false,
+		" 12":       false,
+		"12 ":       false,
+		"-1":        false,
+		"1.0":       false,
 	}
 	for in, want := range cases {
 		if got := isAllDigits(in); got != want {

@@ -76,7 +76,7 @@ func (a *App) uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	ttlStr := firstNonEmpty(r.URL.Query().Get("ttl"), r.Header.Get("param-ttl"))
 	ttlDays, _ := strconv.Atoi(ttlStr)
-	if ttlDays < 1 || ttlDays > 7 {
+	if ttlDays < 1 || ttlDays > 365 {
 		ttlDays = 1
 	}
 
