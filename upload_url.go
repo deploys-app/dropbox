@@ -128,7 +128,7 @@ func parseUploadToken(key []byte, token string) (uploadGrant, bool) {
 type uploadURLRequest struct {
 	Project     string `json:"project"`     // project sid or numeric id
 	ProjectID   string `json:"projectId"`   // numeric id (same as a numeric project)
-	TTL         int    `json:"ttl"`         // file download lifetime, 1-7 days (default 1)
+	TTL         int    `json:"ttl"`         // file download lifetime, 1-365 days (default 1)
 	Filename    string `json:"filename"`    // optional Content-Disposition on download
 	ContentType string `json:"contentType"` // optional; the PUT must send this exactly
 	MinSize     int64  `json:"minSize"`     // optional lower bound in bytes (>= 1)
@@ -161,7 +161,7 @@ func (a *App) uploadURLHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ttlDays := req.TTL
-	if ttlDays < 1 || ttlDays > 7 {
+	if ttlDays < 1 || ttlDays > 365 {
 		ttlDays = 1
 	}
 

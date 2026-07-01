@@ -50,7 +50,7 @@ Endpoint: https://dropbox.deploys.app/
 | Name            | Type     | Data Type | Description                     |
 |-----------------|----------|-----------|---------------------------------|
 | Authorization   | required | string    | Authorization token             |
-| Param-Ttl       | optional | number    | 1-7, default 1                  |
+| Param-Ttl       | optional | number    | 1-365, default 1                |
 | Param-Project   | required | string    | Project sid (stable slug) or numeric project ID |
 | Param-Filename  | optional | string    | Filename in Content-Disposition |
 
@@ -58,7 +58,7 @@ Endpoint: https://dropbox.deploys.app/
 
 | Name       | Type     | Data Type | Description                     |
 |------------|----------|-----------|---------------------------------|
-| ttl        | optional | number    | 1-7, default 1                  |
+| ttl        | optional | number    | 1-365, default 1                |
 | project    | required | string    | Project sid (stable slug) **or** numeric project ID — an all-digit value is treated as the ID |
 | projectId  | optional | string    | Numeric project ID (same as passing a numeric `project`) |
 | filename   | optional | string    | Filename in Content-Disposition |
@@ -148,7 +148,7 @@ Two steps: **create** the URL, then **PUT** the file to it.
 |---------------|--------|-----------------------------------------------------------------------------|
 | `project`     | string | Project sid **or** numeric project ID (all-digit ⇒ ID). Required.           |
 | `projectId`   | string | Numeric project ID (same as a numeric `project`).                           |
-| `ttl`         | number | Download lifetime of the resulting file, 1–7 days (default 1).              |
+| `ttl`         | number | Download lifetime of the resulting file, 1–365 days (default 1).            |
 | `filename`    | string | Optional `Content-Disposition` filename on download.                        |
 | `contentType` | string | Optional. When set, the PUT **must** send this exact `Content-Type`.        |
 | `minSize`     | number | Optional lower bound in bytes (clamped to ≥ 1, so empty uploads are refused).|
