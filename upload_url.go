@@ -105,11 +105,10 @@ func makeUploadToken(key []byte, g uploadGrant) (string, error) {
 // or signature failure returns (_, false) before any DB or bucket work — the
 // same CPU-only shield the download path uses.
 func parseUploadToken(key []byte, token string) (uploadGrant, bool) {
-	i := strings.LastIndexByte(token, uploadTokenSep[0])
-	if i <= 0 || i == len(token)-1 {
+	payload, sig, ok := strings.CutLast(token, uploadTokenSep)
+	if !ok || payload == "" || sig == "" {
 		return uploadGrant{}, false
 	}
-	payload, sig := token[:i], token[i+1:]
 	if !hmac.Equal([]byte(sig), []byte(uploadSig(key, payload))) {
 		return uploadGrant{}, false
 	}
@@ -175,10 +174,7 @@ func (a *App) uploadURLHandler(w http.ResponseWriter, r *http.Request) {
 	if maxSize <= 0 || maxSize > maxCap {
 		maxSize = maxCap
 	}
-	minSize := req.MinSize
-	if minSize < 1 {
-		minSize = 1
-	}
+	minSize := max(req.MinSize, 1)
 	if minSize > maxSize {
 		jsonFail(w, "minSize greater than maxSize", http.StatusOK)
 		return

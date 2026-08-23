@@ -239,12 +239,10 @@ func TestCheckAuth_SingleflightCollapsesConcurrentCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for i := range N {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
-			results[idx] = checkAuth(context.Background(), token, "sfproject", "")
-		}(i)
+			results[i] = checkAuth(context.Background(), token, "sfproject", "")
+		})
 	}
 	close(start)
 	wg.Wait()
