@@ -295,12 +295,10 @@ func TestLookupFile_SingleflightCollapsesConcurrentCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	for i := range N {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start // release all goroutines at once to maximise overlap
-			results[idx] = lookupFile(ctx, fn)
-		}(i)
+			results[i] = lookupFile(ctx, fn)
+		})
 	}
 	close(start)
 	wg.Wait()
