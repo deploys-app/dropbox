@@ -1,6 +1,6 @@
 module moonrhythm/dropbox
 
-go 1.26.3
+go 1.27.0
 
 replace github.com/lib/pq => github.com/moonrhythm/pq v0.0.0-20230504040008-09b0644d6569
 
